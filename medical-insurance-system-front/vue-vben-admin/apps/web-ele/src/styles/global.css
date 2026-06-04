@@ -1,0 +1,13 @@
+/* ✅ 隐藏右上角整排操作区（搜索/通知/设置/全屏/主题/头像等） */
+header .flex.h-full.min-w-0.flex-shrink-0.items-center {
+  display: none !important;
+}
+/* 左上角 Logo 标题：允许换行 + 字体小一点 */
+.vben-layout-logo__title,
+.vben-app-logo__title,
+.vben-logo__title {
+  max-width: 160px;
+  white-space: normal !important;
+  line-height: 1.1;
+  font-size: 12px;
+}
