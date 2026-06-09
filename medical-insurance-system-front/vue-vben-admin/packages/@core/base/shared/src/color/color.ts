@@ -1,4 +1,4 @@
-import { TinyColor } from '@ctrl/tinycolor';
+import { TinyColor } from '@ctrl/tinycolor/dist/module/index.js';
 
 export function isDarkColor(color: string) {
   return new TinyColor(color).isDark();
