@@ -11,5 +11,103 @@
     "title": "Dashboard",
     "analytics": "Analytics",
     "workspace": "Workspace"
+  },
+  "feijian": {
+    "title": "Flight Inspection",
+    "inspection": "Inspection Management",
+    "stats": {
+      "total": "Total Inspections",
+      "inProgress": "In Progress",
+      "completed": "Completed",
+      "withIssues": "Issues Found",
+      "totalViolationAmount": "Violation Amount (10k)"
+    },
+    "search": {
+      "inspectionNo": "Inspection No.",
+      "hospitalName": "Hospital Name",
+      "hospitalType": "Hospital Type",
+      "inspectionType": "Inspection Type",
+      "status": "Status",
+      "result": "Result",
+      "dateRange": "Date Range",
+      "search": "Search",
+      "reset": "Reset",
+      "export": "Export"
+    },
+    "table": {
+      "inspectionNo": "Inspection No.",
+      "hospitalName": "Hospital Name",
+      "hospitalType": "Hospital Type",
+      "inspectionType": "Inspection Type",
+      "inspectionDate": "Date",
+      "teamLeader": "Team Leader",
+      "result": "Result",
+      "status": "Status",
+      "action": "Action",
+      "detail": "Detail",
+      "edit": "Edit",
+      "delete": "Delete"
+    },
+    "modal": {
+      "add": "New Inspection",
+      "edit": "Edit Inspection",
+      "detail": "Inspection Detail",
+      "baseInfo": "Basic Info",
+      "hospitalInfo": "Hospital Info",
+      "teamInfo": "Inspection Team",
+      "resultInfo": "Inspection Result",
+      "inspectionNo": "Inspection No.",
+      "hospitalName": "Hospital Name",
+      "hospitalType": "Hospital Type",
+      "hospitalAddress": "Address",
+      "contactPerson": "Contact Person",
+      "contactPhone": "Contact Phone",
+      "inspectionType": "Inspection Type",
+      "inspectionDate": "Start Date",
+      "inspectionEndDate": "End Date",
+      "teamLeader": "Team Leader",
+      "teamMembers": "Team Members",
+      "memberName": "Name",
+      "memberRole": "Role",
+      "memberPhone": "Phone",
+      "addMember": "Add Member",
+      "result": "Result",
+      "findings": "Findings",
+      "recommendation": "Recommendation",
+      "violationAmount": "Violation Amount",
+      "status": "Status",
+      "submit": "Submit",
+      "cancel": "Cancel"
+    },
+    "status": {
+      "draft": "Draft",
+      "pending": "Pending",
+      "in-progress": "In Progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "result": {
+      "none": "Pending",
+      "compliant": "Compliant",
+      "minor-issue": "Minor Issue",
+      "major-issue": "Major Issue",
+      "violation": "Violation"
+    },
+    "type": {
+      "routine": "Routine",
+      "special": "Special",
+      "unannounced": "Unannounced",
+      "follow-up": "Follow-up"
+    },
+    "hospitalType": {
+      "general": "General Hospital",
+      "specialist": "Specialist Hospital",
+      "community": "Community Health",
+      "private": "Private Hospital"
+    },
+    "confirmDelete": "Confirm to delete this inspection record?",
+    "deleteSuccess": "Deleted successfully",
+    "createSuccess": "Created successfully",
+    "updateSuccess": "Updated successfully"
   }
 }

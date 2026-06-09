@@ -36,7 +36,8 @@ INSTALLED_APPS = [
     'tasks',
     'results',
     'cases',
-    'repeat_charging',  # 增强重复收费检测模块
+    'repeat_charging',
+    'feijian',  # 飞检结果管理
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -87,7 +88,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': 'Ecust@1234',
+        'PASSWORD': '224898504@Wyx',
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
@@ -136,6 +137,10 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
 STATIC_URL = 'static/'
+
+# 上传文件存储
+MEDIA_URL = '/media/'
+MEDIA_ROOT = BASE_DIR / 'media'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

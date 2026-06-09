@@ -11,5 +11,103 @@
     "title": "概览",
     "analytics": "分析页",
     "workspace": "工作台"
+  },
+  "feijian": {
+    "title": "飞行检查",
+    "inspection": "检查管理",
+    "stats": {
+      "total": "检查总数",
+      "inProgress": "进行中",
+      "completed": "已完成",
+      "withIssues": "发现问题",
+      "totalViolationAmount": "违规金额(万元)"
+    },
+    "search": {
+      "inspectionNo": "检查编号",
+      "hospitalName": "医疗机构",
+      "hospitalType": "机构类型",
+      "inspectionType": "检查类型",
+      "status": "检查状态",
+      "result": "检查结果",
+      "dateRange": "检查日期",
+      "search": "查询",
+      "reset": "重置",
+      "export": "导出"
+    },
+    "table": {
+      "inspectionNo": "检查编号",
+      "hospitalName": "医疗机构名称",
+      "hospitalType": "机构类型",
+      "inspectionType": "检查类型",
+      "inspectionDate": "检查日期",
+      "teamLeader": "检查组组长",
+      "result": "检查结果",
+      "status": "状态",
+      "action": "操作",
+      "detail": "详情",
+      "edit": "编辑",
+      "delete": "删除"
+    },
+    "modal": {
+      "add": "新增检查",
+      "edit": "编辑检查",
+      "detail": "检查详情",
+      "baseInfo": "基本信息",
+      "hospitalInfo": "医疗机构信息",
+      "teamInfo": "检查组信息",
+      "resultInfo": "检查结果",
+      "inspectionNo": "检查编号",
+      "hospitalName": "医疗机构名称",
+      "hospitalType": "机构类型",
+      "hospitalAddress": "机构地址",
+      "contactPerson": "联系人",
+      "contactPhone": "联系电话",
+      "inspectionType": "检查类型",
+      "inspectionDate": "检查开始日期",
+      "inspectionEndDate": "检查结束日期",
+      "teamLeader": "检查组组长",
+      "teamMembers": "检查组成员",
+      "memberName": "成员姓名",
+      "memberRole": "角色",
+      "memberPhone": "联系电话",
+      "addMember": "添加成员",
+      "result": "检查结果",
+      "findings": "检查发现",
+      "recommendation": "处理建议",
+      "violationAmount": "违规金额(元)",
+      "status": "检查状态",
+      "submit": "提交",
+      "cancel": "取消"
+    },
+    "status": {
+      "draft": "草稿",
+      "pending": "待检查",
+      "in-progress": "进行中",
+      "completed": "已完成",
+      "cancelled": "已取消"
+    },
+    "result": {
+      "none": "待定",
+      "compliant": "合规",
+      "minor-issue": "一般问题",
+      "major-issue": "严重问题",
+      "violation": "违规"
+    },
+    "type": {
+      "routine": "常规检查",
+      "special": "专项检查",
+      "unannounced": "飞行检查",
+      "follow-up": "复查"
+    },
+    "hospitalType": {
+      "general": "综合医院",
+      "specialist": "专科医院",
+      "community": "社区卫生中心",
+      "private": "民营医院"
+    },
+    "confirmDelete": "确认删除该检查记录？",
+    "deleteSuccess": "删除成功",
+    "createSuccess": "新增成功",
+    "updateSuccess": "更新成功"
   }
 }

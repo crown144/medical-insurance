@@ -5,7 +5,7 @@ import { mergeRouteModules, traverseTreeValues } from '@vben/utils';
 import { coreRoutes, fallbackNotFoundRoute } from './core';
 
 const dynamicRouteFiles = import.meta.glob(
-  './modules/{rule,task,result,knowledge}.ts',
+  './modules/{rule,task,result,knowledge,feijian}.ts',
   { eager: true },
 );
 

@@ -121,7 +121,22 @@ const bizMenus = [
     ],
   },
 
-  // ✅ 这个是“审计详情页”，不放菜单里，但能通过 router.push 正常进入
+  {
+    meta: { order: 30, title: '飞检结果管理', icon: 'mdi:file-search-outline' },
+    name: 'FeiJian',
+    path: '/feijian',
+    redirect: '/feijian/manage',
+    children: [
+      {
+        name: 'FeiJianManage',
+        path: '/feijian/manage',
+        component: '/feijian/manage/index',
+        meta: { title: '飞检结果处理', icon: 'mdi:clipboard-check-outline' },
+      },
+    ],
+  },
+
+  // ✅ 这个是”审计详情页”，不放菜单里，但能通过 router.push 正常进入
   {
     name: 'AuditDetail',
     path: '/audit-detail',
