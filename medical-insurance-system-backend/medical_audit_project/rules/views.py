@@ -1,4 +1,3 @@
-from django.db.models import Q
 from django_filters import rest_framework as django_filters
 from rest_framework import filters as drf_filters
 from rest_framework import status, viewsets
@@ -31,7 +30,7 @@ class RuleFilter(django_filters.FilterSet):
 
 
 class RuleViewSet(viewsets.ModelViewSet):
-    queryset = Rule.objects.exclude(Q(rule_code__isnull=True) | Q(rule_code__exact='')).order_by('id')
+    queryset = Rule.objects.all().order_by('id')
     serializer_class = RuleSerializer
     pagination_class = OptionalPagination
     filter_backends = [

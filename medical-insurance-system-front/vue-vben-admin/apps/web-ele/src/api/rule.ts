@@ -1,4 +1,4 @@
-import { baseRequestClient, requestClient } from '#/api/request';
+import { baseRequestClient } from '#/api/request';
 
 export interface RuleItem {
   id: number;
@@ -31,7 +31,10 @@ export async function getRuleList(params: any) {
  * @param enabled 是否启用
  */
 export function toggleRuleStatus(id: number | string, enabled: boolean) {
-  return requestClient.patch(`/rules/${id}/`, { enabled });
+  return baseRequestClient.request(`/rules/${id}/`, {
+    data: { enabled },
+    method: 'PATCH',
+  });
 }
 
 /**
@@ -39,19 +42,19 @@ export function toggleRuleStatus(id: number | string, enabled: boolean) {
  * @param id 规则数据库ID
  */
 export function deleteRule(id: number | string) {
-  return requestClient.delete(`/rules/${id}/`);
+  return baseRequestClient.delete(`/rules/${id}/`);
 }
 
 /**
  * 新增规则
  */
 export function createRule(data: Partial<RuleItem>) {
-  return requestClient.post('/rules/', data);
+  return baseRequestClient.post('/rules/', data);
 }
 
 /**
  * 更新规则
  */
 export function updateRule(id: number | string, data: Partial<RuleItem>) {
-  return requestClient.put(`/rules/${id}/`, data);
+  return baseRequestClient.put(`/rules/${id}/`, data);
 }

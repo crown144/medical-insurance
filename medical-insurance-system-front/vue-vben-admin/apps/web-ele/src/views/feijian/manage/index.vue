@@ -444,7 +444,12 @@ onMounted(() => {
         <!-- ==================== Tab 1: 飞检结果导入 ==================== -->
         <el-tab-pane label="飞检结果导入" name="import">
           <div class="tab-header">
-            <span class="tab-desc">从飞检结果文件中提取住院号及问题信息，自动解析列结构并导入</span>
+            <div class="tab-copy">
+              <div class="tab-title">飞检结果文件导入</div>
+              <div class="tab-desc">
+                从飞检结果文件中提取住院号及问题信息，自动解析列结构并导入
+              </div>
+            </div>
             <div class="tab-actions">
               <el-button type="primary" :icon="Upload" :loading="uploading" @click="triggerFileInput">
                 {{ uploading ? '分析中...' : '上传飞检文件' }}
@@ -1040,23 +1045,39 @@ onMounted(() => {
   box-shadow: none;
 }
 .main-tabs :deep(.el-tabs__content) {
-  padding: 16px 0 0;
+  padding: 18px 16px 0;
 }
 
 /* Tab header */
 .tab-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 16px;
   margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid #f0f0f0;
 }
+.tab-copy {
+  min-width: 0;
+  max-width: 760px;
+}
+.tab-title {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.35;
+  color: #1f2d3d;
+}
 .tab-desc {
+  margin-top: 5px;
   font-size: 13px;
+  line-height: 1.7;
   color: #8a94a6;
+  white-space: normal;
+  word-break: break-word;
 }
 .tab-actions {
+  flex-shrink: 0;
   display: flex;
   gap: 8px;
 }
@@ -1287,6 +1308,15 @@ onMounted(() => {
 .gap-3 { gap: 12px; }
 
 @media (max-width: 900px) {
+  .tab-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .tab-actions {
+    justify-content: flex-start;
+  }
+
   .analysis-grid {
     grid-template-columns: 1fr;
   }

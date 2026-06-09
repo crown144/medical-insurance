@@ -14,7 +14,13 @@ import {
 } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
-import { deleteRule, getRuleList, toggleRuleStatus } from '#/api/rule';
+import {
+  createRule,
+  deleteRule,
+  getRuleList,
+  toggleRuleStatus,
+  updateRule,
+} from '#/api/rule';
 
 type RuleType =
   | '超标准收费'
@@ -140,11 +146,11 @@ const fetchData = async () => {
       list.value = rawList.map((item: any) => ({
         id: item.id,
         ruleId: item.ruleId || `R-${item.id}`,
-        drug_name: item.drug_name || extractRuleName(item.description),
+        drug_name: item.drugName || item.drug_name || extractRuleName(item.description),
         ruleType: item.type as RuleType,
         description: item.description,
         enabled: item.enabled,
-        ruleCode: item.rule_code || '',
+        ruleCode: item.rule_code || item.ruleCode || '',
         // 其他字段若后端未返回，给默认值
         sourceLocate: '《国家基本医疗保险、工伤保险和生育保险药品目录》',
         sourceHtml: '',
@@ -314,10 +320,10 @@ async function save() {
 
   // 构造提交给后端的数据
   const payload = {
-    drug_name: form.drug_name,
-    ruleId: form.id.toString().startsWith('rule_')
-      ? `R-${Date.now()}` // 临时ID生成策略
-      : (form.id as string), // 编辑时保留原ID
+    drugName: form.drug_name,
+    ruleId: editingId.value
+      ? form.ruleId || `R-${editingId.value}`
+      : form.ruleId || `R-${Date.now()}`,
     type: form.ruleType,
     description: form.description,
     enabled: form.enabled,
