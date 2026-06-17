@@ -75,7 +75,7 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   client.addResponseInterceptor(
     defaultResponseInterceptor({
       codeField: 'code',
-      dataField: 'data',
+      dataField: (response) => response.result ?? response.data,
       successCode: 0,
     }),
   );

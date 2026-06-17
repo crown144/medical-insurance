@@ -25,7 +25,7 @@ import LoginForm from '#/views/_core/authentication/login.vue';
 const notifications = ref<NotificationItem[]>([
   {
     id: 1,
-    avatar: 'https://avatar.vercel.sh/vercel.svg?text=VB',
+    avatar: '',
     date: '3小时前',
     isRead: true,
     message: '描述信息描述信息描述信息',
@@ -33,7 +33,7 @@ const notifications = ref<NotificationItem[]>([
   },
   {
     id: 2,
-    avatar: 'https://avatar.vercel.sh/1',
+    avatar: '',
     date: '刚刚',
     isRead: false,
     message: '描述信息描述信息描述信息',
@@ -41,7 +41,7 @@ const notifications = ref<NotificationItem[]>([
   },
   {
     id: 3,
-    avatar: 'https://avatar.vercel.sh/1',
+    avatar: '',
     date: '2024-01-01',
     isRead: false,
     message: '描述信息描述信息描述信息',
@@ -49,7 +49,7 @@ const notifications = ref<NotificationItem[]>([
   },
   {
     id: 4,
-    avatar: 'https://avatar.vercel.sh/satori',
+    avatar: '',
     date: '1天前',
     isRead: false,
     message: '描述信息描述信息描述信息',
@@ -57,7 +57,7 @@ const notifications = ref<NotificationItem[]>([
   },
   {
     id: 5,
-    avatar: 'https://avatar.vercel.sh/satori',
+    avatar: '',
     date: '1天前',
     isRead: false,
     message: '描述信息描述信息描述信息',
@@ -66,7 +66,7 @@ const notifications = ref<NotificationItem[]>([
   },
   {
     id: 6,
-    avatar: 'https://avatar.vercel.sh/satori',
+    avatar: '',
     date: '1天前',
     isRead: false,
     message: '描述信息描述信息描述信息',
@@ -122,7 +122,7 @@ const menus = computed(() => [
 ]);
 
 const avatar = computed(() => {
-  return userStore.userInfo?.avatar ?? preferences.app.defaultAvatar;
+  return userStore.userInfo?.avatar || preferences.app.defaultAvatar || '';
 });
 
 async function handleLogout() {

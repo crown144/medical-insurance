@@ -123,7 +123,13 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        result = align_batch_results(batch, task_id=task_id)
+        use_llm = str(payload.get('use_llm', '')).strip().lower() in {
+            '1',
+            'true',
+            'yes',
+            'on',
+        }
+        result = align_batch_results(batch, task_id=task_id, use_llm=use_llm)
         total = len(result.get('items', []))
         try:
             page = max(int(payload.get('page', 1)), 1)

@@ -13,8 +13,8 @@ import {
 import axios from 'axios';
 import { ElButton, ElEmpty, ElIcon, ElMessage, ElTag } from 'element-plus';
 
-const API_BASE_URL = 'http://127.0.0.1:8000/api';
-const MOCK_API_BASE_URL = 'http://127.0.0.1:8001';
+const API_BASE_URL = '/api';
+const PATIENT_CASE_API = '/api/cases/patient-case/';
 
 interface Highlight {
   field_path: string;
@@ -122,7 +122,7 @@ const loadPageData = async () => {
 
     // 1.2 获取病历全文
     const fetchRecord = () =>
-      axios.get(`${MOCK_API_BASE_URL}/get_patient_data`, {
+      axios.get(PATIENT_CASE_API, {
         params: { hospitalization_id: hospitalizationId.value },
       });
 

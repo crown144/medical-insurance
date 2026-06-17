@@ -23,7 +23,7 @@ def user_info(request):
             'userId': '1',
             'username': 'admin',
             'realName': '系统管理员',
-            'avatar': 'https://q1.qlogo.cn/g?b=qq&nk=190848757&s=640',
+            'avatar': '',
             'desc': 'Super Admin',
             'roles': ['super'],
             'token': 'fake-token-123',

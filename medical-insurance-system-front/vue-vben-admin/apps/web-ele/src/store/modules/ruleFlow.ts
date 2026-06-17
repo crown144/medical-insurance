@@ -5,6 +5,7 @@ import { defineStore } from 'pinia';
 
 // ✅ 【修正 1】引用真实存在的 audit.ts，而不是不存在的 ruleEngine
 import { startAuditApi } from '../../api/audit';
+import { generateRuleApi } from '../../api/rule';
 
 export const useRuleFlowStore = defineStore('rule-flow', () => {
   // ========== State (状态) ==========
@@ -206,12 +207,24 @@ export const useRuleFlowStore = defineStore('rule-flow', () => {
   async function compileSingleItem(index: number) {
     const item = batchRules.value[index];
     item.status = 'loading';
-    await new Promise((r) => setTimeout(r, 500 + Math.random() * 1000));
-    item.status = 'success';
-    item.artifacts = {
-      logic_summary: 'AND(诊断, 时长)',
-      code_snippet: 'def execute_rule(ctx): ...',
-    };
+    try {
+      const generated = await generateRuleApi(item.rule || item.ruleText || '');
+      item.status = 'success';
+      item.artifacts = {
+        logic_summary: 'AND(诊断, 时长)',
+        code_snippet: generated?.generated_code || '',
+        generated_code: generated?.generated_code || '',
+        raw_output: generated?.raw_output,
+        rule_snapshot: generated?.rule_snapshot || {},
+        runtime_label: generated?.runtime_label,
+        runtime_mode: generated?.runtime_mode,
+        validation: generated?.validation,
+      };
+    } catch (error: any) {
+      item.status = 'error';
+      item.error = error?.response?.data?.message || error?.message || '规则转换失败';
+      item.artifacts = null;
+    }
   }
 
   async function runBatchCompile() {

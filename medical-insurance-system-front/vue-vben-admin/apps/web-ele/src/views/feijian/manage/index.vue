@@ -10,6 +10,7 @@ import type {
 } from '../../../api/model/feijianModel';
 
 import { computed, onMounted, reactive, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import { DataAnalysis, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
@@ -28,6 +29,7 @@ import {
 // ==================== 状态定义 ====================
 
 const activeTab = ref('import');
+const router = useRouter();
 const stats = ref<FeiJianStats>({
   totalImports: 0,
   totalRawRecords: 0,
@@ -103,6 +105,9 @@ const alignmentItems = ref<AlignmentResult[]>([]);
 const alignmentPage = ref(1);
 const alignmentPageSize = ref(10);
 const alignmentTotal = ref(0);
+const alignmentUseLlm = ref(true);
+const alignmentDetailVisible = ref(false);
+const selectedAlignmentDetail = ref<AlignmentResult | null>(null);
 const selectedAlignmentBatch = computed(() =>
   successfulBatches.value.find((batch) => batch.id === alignmentBatchId.value),
 );
@@ -350,6 +355,7 @@ async function handleAlignResults(resetPage = false) {
       page: alignmentPage.value,
       page_size: alignmentPageSize.value,
       task_id: taskId,
+      use_llm: alignmentUseLlm.value,
     });
     alignmentResult.value = result;
     alignmentItems.value = result.items;
@@ -357,13 +363,35 @@ async function handleAlignResults(resetPage = false) {
     stats.value.alignmentRate = result.summary.alignmentRate;
     stats.value.diffCount = result.summary.diffCount;
     stats.value.unresolvedDiffCount = result.summary.unresolvedDiffCount;
-    ElMessage.success(`对齐完成：对齐率 ${result.summary.alignmentRate}%`);
+    const llmText = result.llm_enabled ? '，已启用大模型复核' : '';
+    ElMessage.success(`对齐完成：对齐率 ${result.summary.alignmentRate}%${llmText}`);
   } catch (error: any) {
     const msg = error?.response?.data?.error || error?.message || '结果对齐失败';
     ElMessage.error(msg);
   } finally {
     alignmentLoading.value = false;
   }
+}
+
+function showAlignmentDetail(row: AlignmentResult) {
+  selectedAlignmentDetail.value = row;
+  alignmentDetailVisible.value = true;
+}
+
+function openSystemResultDetail(row?: AlignmentResult | null) {
+  const target = row || selectedAlignmentDetail.value;
+  if (!target?.systemResultId) {
+    ElMessage.warning('当前行没有可查看的系统违规明细');
+    return;
+  }
+  router.push({
+    name: 'ResultAuditViewDetail',
+    query: {
+      hospitalizationId: target.hospitalizationNo,
+      resultId: target.systemResultId,
+      taskId: target.auditTaskId,
+    },
+  });
 }
 
 function resetImport() {
@@ -829,6 +857,14 @@ onMounted(() => {
                       style="width: 240px"
                     />
                   </div>
+                  <div class="query-item">
+                    <div class="query-label">大模型匹配</div>
+                    <el-switch
+                      v-model="alignmentUseLlm"
+                      active-text="开启"
+                      inactive-text="关闭"
+                    />
+                  </div>
                   <div class="query-actions">
                     <el-button
                       type="primary"
@@ -895,15 +931,15 @@ onMounted(() => {
               >
                 <el-table-column prop="hospitalizationNo" label="住院号" width="150" align="center" />
                 <el-table-column prop="patientName" label="患者" width="90" align="center" />
-                <el-table-column label="飞检问题" min-width="220" show-overflow-tooltip>
+                <el-table-column label="飞检问题" min-width="240">
                   <template #default="{ row }">
-                    <div class="issue-main">{{ row.feijianIssue || '-' }}</div>
+                    <div class="issue-main issue-text">{{ row.feijianIssue || '-' }}</div>
                     <div class="muted">{{ row.feijianCategory || '-' }}</div>
                   </template>
                 </el-table-column>
-                <el-table-column label="系统问题" min-width="220" show-overflow-tooltip>
+                <el-table-column label="系统问题" min-width="360">
                   <template #default="{ row }">
-                    <div class="issue-main">{{ row.systemIssue || '-' }}</div>
+                    <div class="issue-main issue-text system-issue-text">{{ row.systemIssue || '-' }}</div>
                     <div class="muted">{{ row.systemCategory || '-' }}</div>
                   </template>
                 </el-table-column>
@@ -920,7 +956,15 @@ onMounted(() => {
                     </el-tag>
                   </template>
                 </el-table-column>
-                <el-table-column label="分数" width="90" align="center">
+                <el-table-column width="110" align="center">
+                  <template #header>
+                    <el-tooltip
+                      content="匹配度是后端按住院号一致、问题类型归一、文本相似度、金额接近度以及大模型复核综合得到的 0-100 分。"
+                      placement="top"
+                    >
+                      <span>匹配度</span>
+                    </el-tooltip>
+                  </template>
                   <template #default="{ row }">
                     {{ Math.round((row.matchScore || 0) * 100) }}%
                   </template>
@@ -928,6 +972,18 @@ onMounted(() => {
                 <el-table-column label="依据" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.matchReasons?.join('、') || '-' }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="140" fixed="right" align="center">
+                  <template #default="{ row }">
+                    <el-button
+                      type="primary"
+                      link
+                      :icon="Search"
+                      @click="showAlignmentDetail(row)"
+                    >
+                      查看
+                    </el-button>
                   </template>
                 </el-table-column>
                 <template #empty>
@@ -950,6 +1006,88 @@ onMounted(() => {
             </div>
           </div>
         </el-tab-pane>
+
+        <el-dialog
+          v-model="alignmentDetailVisible"
+          title="对齐明细"
+          width="760px"
+          destroy-on-close
+        >
+          <div v-if="selectedAlignmentDetail" class="alignment-detail">
+            <div class="detail-header">
+              <div>
+                <div class="detail-title">{{ selectedAlignmentDetail.hospitalizationNo }}</div>
+                <div class="muted">
+                  {{ selectedAlignmentDetail.patientName || '未知患者' }}
+                  <span v-if="selectedAlignmentDetail.hospitalName">
+                    · {{ selectedAlignmentDetail.hospitalName }}
+                  </span>
+                </div>
+              </div>
+              <el-tag :type="getMatchStatusType(selectedAlignmentDetail.matchStatus)">
+                {{ selectedAlignmentDetail.matchStatusLabel }}
+              </el-tag>
+            </div>
+
+            <div class="detail-grid">
+              <div class="detail-block">
+                <div class="detail-label">飞检问题</div>
+                <div class="detail-text">{{ selectedAlignmentDetail.feijianIssue || '-' }}</div>
+                <div class="detail-meta">
+                  类型：{{ selectedAlignmentDetail.feijianCategory || '-' }}
+                </div>
+                <div class="detail-meta">
+                  金额：{{ selectedAlignmentDetail.feijianAmount?.toLocaleString() || 0 }}
+                </div>
+              </div>
+              <div class="detail-block">
+                <div class="detail-label">系统问题</div>
+                <div class="detail-text">{{ selectedAlignmentDetail.systemIssue || '-' }}</div>
+                <div class="detail-meta">
+                  类型：{{ selectedAlignmentDetail.systemCategory || '-' }}
+                </div>
+                <div class="detail-meta">
+                  金额：{{ selectedAlignmentDetail.systemAmount?.toLocaleString() || 0 }}
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-block">
+              <div class="detail-label">匹配度</div>
+              <div class="detail-score">
+                {{ Math.round((selectedAlignmentDetail.matchScore || 0) * 100) }}%
+              </div>
+              <div class="detail-meta">
+                综合住院号、问题类型、文本相似度、金额接近度及大模型复核结果计算。
+              </div>
+            </div>
+
+            <div class="detail-block">
+              <div class="detail-label">匹配依据</div>
+              <el-tag
+                v-for="reason in selectedAlignmentDetail.matchReasons || []"
+                :key="reason"
+                class="mr-1 mb-1"
+                effect="plain"
+                size="small"
+              >
+                {{ reason }}
+              </el-tag>
+              <span v-if="!selectedAlignmentDetail.matchReasons?.length" class="muted">暂无依据</span>
+            </div>
+          </div>
+
+          <template #footer>
+            <el-button @click="alignmentDetailVisible = false">关闭</el-button>
+            <el-button
+              type="primary"
+              :disabled="!selectedAlignmentDetail?.systemResultId"
+              @click="openSystemResultDetail()"
+            >
+              打开违规详情
+            </el-button>
+          </template>
+        </el-dialog>
 
         <!-- ==================== Tab 5: 差异分析 ==================== -->
         <el-tab-pane label="差异分析" name="diff">
@@ -1291,6 +1429,77 @@ onMounted(() => {
   font-weight: 500;
 }
 
+.issue-text {
+  line-height: 1.55;
+  white-space: normal;
+  word-break: break-word;
+}
+
+.system-issue-text {
+  max-height: 72px;
+  overflow: auto;
+}
+
+.alignment-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.detail-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2a37;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.detail-block {
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #eef2f7;
+  border-radius: 8px;
+}
+
+.detail-label {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #475467;
+}
+
+.detail-text {
+  line-height: 1.7;
+  color: #303133;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #667085;
+}
+
+.detail-score {
+  font-size: 24px;
+  font-weight: 700;
+  color: #1677ff;
+}
+
 /* 辅助 */
 .op-sep {
   color: #dcdfe6;
@@ -1301,6 +1510,7 @@ onMounted(() => {
   font-size: 12px;
 }
 .mr-1 { margin-right: 4px; }
+.mb-1 { margin-bottom: 4px; }
 .mt-3 { margin-top: 12px; }
 .mb-3 { margin-bottom: 12px; }
 .flex { display: flex; }
@@ -1323,6 +1533,10 @@ onMounted(() => {
 
   .alignment-summary {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
