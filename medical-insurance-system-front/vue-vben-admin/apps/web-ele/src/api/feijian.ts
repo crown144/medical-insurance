@@ -121,7 +121,7 @@ export async function buildFeiJianAuditTaskApi(
 
 export async function alignFeiJianResultsApi(
   batchId: number,
-  params?: { page?: number; page_size?: number; task_id?: number },
+  params?: { page?: number; page_size?: number; task_id?: number; use_llm?: boolean },
 ): Promise<AlignResultsResponse> {
   const response = await baseRequestClient.get<any>(
     `/feijian/import-batches/${batchId}/align-results/`,

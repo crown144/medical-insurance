@@ -16,7 +16,7 @@ def user_info(request):
             "userId": "1",
             "username": "admin",
             "realName": "系统管理员",
-            "avatar": "https://q1.qlogo.cn/g?b=qq&nk=190848757&s=640",
+            "avatar": "",
             "desc": "Super Admin",
             # 'super' 是 Vben 默认的超管角色，拥有所有权限
             "roles": ["super"], 

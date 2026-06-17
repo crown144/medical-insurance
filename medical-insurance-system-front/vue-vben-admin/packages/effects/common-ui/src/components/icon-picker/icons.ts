@@ -4,17 +4,51 @@ import type { Recordable } from '@vben/types';
  * 一个缓存对象，在不刷新页面时，无需重复请求远程接口
  */
 export const ICONS_MAP: Recordable<string[]> = {};
-
-interface IconifyResponse {
-  prefix: string;
-  total: number;
-  title: string;
-  uncategorized?: string[];
-  categories?: Recordable<string[]>;
-  aliases?: Recordable<string>;
-}
-
-const PENDING_REQUESTS: Recordable<Promise<string[]>> = {};
+const OFFLINE_ICONS_MAP: Recordable<string[]> = {
+  'ant-design': ['ant-design:unordered-list-outlined'],
+  carbon: ['carbon:workspace'],
+  ic: ['ic:baseline-view-in-ar'],
+  logos: ['logos:naiveui'],
+  lucide: [
+    'lucide:area-chart',
+    'lucide:book-open-text',
+    'lucide:copyright',
+    'lucide:layout-dashboard',
+    'lucide:user',
+  ],
+  mdi: [
+    'mdi:alert-circle-outline',
+    'mdi:book-medical',
+    'mdi:cash-multiple',
+    'mdi:check-decagram-outline',
+    'mdi:clipboard-check-outline',
+    'mdi:clipboard-text-outline',
+    'mdi:clipboard-text-search-outline',
+    'mdi:cog-outline',
+    'mdi:code-tags',
+    'mdi:database-outline',
+    'mdi:database-search-outline',
+    'mdi:file-document-outline',
+    'mdi:file-eye-outline',
+    'mdi:file-search-outline',
+    'mdi:folder-cog-outline',
+    'mdi:format-list-bulleted',
+    'mdi:format-list-bulleted-type',
+    'mdi:github',
+    'mdi:knife',
+    'mdi:marker-check',
+    'mdi:pill',
+    'mdi:play-circle-outline',
+    'mdi:plus-box-outline',
+    'mdi:repeat',
+    'mdi:script-text-outline',
+    'mdi:shape-outline',
+    'mdi:stethoscope',
+    'mdi:tray-arrow-up',
+    'mdi:vector-arrange-above',
+    'mdi:view-dashboard-variant-outline',
+  ],
+};
 
 /**
  * 通过Iconify接口获取图标集数据。
@@ -27,30 +61,6 @@ export async function fetchIconsData(prefix: string): Promise<string[]> {
   if (Reflect.has(ICONS_MAP, prefix) && ICONS_MAP[prefix]) {
     return ICONS_MAP[prefix];
   }
-  if (Reflect.has(PENDING_REQUESTS, prefix) && PENDING_REQUESTS[prefix]) {
-    return PENDING_REQUESTS[prefix];
-  }
-  PENDING_REQUESTS[prefix] = (async () => {
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 1000 * 10);
-      const response: IconifyResponse = await fetch(
-        `https://api.iconify.design/collection?prefix=${prefix}`,
-        { signal: controller.signal },
-      ).then((res) => res.json());
-      clearTimeout(timeoutId);
-      const list = response.uncategorized || [];
-      if (response.categories) {
-        for (const category in response.categories) {
-          list.push(...(response.categories[category] || []));
-        }
-      }
-      ICONS_MAP[prefix] = list.map((v) => `${prefix}:${v}`);
-    } catch (error) {
-      console.error(`Failed to fetch icons for prefix ${prefix}:`, error);
-      return [] as string[];
-    }
-    return ICONS_MAP[prefix];
-  })();
-  return PENDING_REQUESTS[prefix];
+  ICONS_MAP[prefix] = OFFLINE_ICONS_MAP[prefix] || [];
+  return ICONS_MAP[prefix];
 }

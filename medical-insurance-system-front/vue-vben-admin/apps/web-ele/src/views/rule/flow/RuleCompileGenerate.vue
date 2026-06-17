@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
-import axios from 'axios';
 
 import {
   CircleCheck,
@@ -13,6 +12,7 @@ import { ElMessage } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
 // 确保路径正确指向您的 store 文件
+import { generateRuleApi } from '../../../api/rule';
 import { useRuleFlowStore } from '../../../store/modules/ruleFlow';
 
 const router = useRouter();
@@ -33,10 +33,6 @@ const batchProgress = computed(() => {
   ).length;
   return Math.floor((finished / batchRules.value.length) * 100);
 });
-
-const isBatchRunning = computed(
-  () => batchProgress.value < 100 && batchProgress.value > 0,
-);
 
 // 批量详情抽屉
 const detailDrawerVisible = ref(false);
@@ -72,22 +68,47 @@ const handleCompile = async () => {
 
     // 2. 调用后端 API
     // 使用规则输入内容匹配 description
-    const response = await axios.get('http://127.0.0.1:8000/api/rules/', {
-      params: { search: flowStore.ruleText },
-    });
+    const generated = await generateRuleApi(flowStore.ruleText.trim());
+    const response = {
+      data: {
+        results: [
+          {
+            rule_code: generated?.generated_code || '# 后端未返回 generated_code',
+            generated,
+          },
+        ],
+      },
+    };
 
     if (
       response.data &&
       response.data.results &&
       response.data.results.length > 0
     ) {
+      const result = response.data.results[0];
+      const generatedResult = result?.generated;
       // 匹配成功，展示 rule_code
-      executionCode.value = response.data.results[0].rule_code || '# 规则代码为空';
+      executionCode.value = result?.rule_code || '# 规则代码为空';
       // 🟢 修复：同步更新 Store 状态，确保下一步可以通行
       flowStore.artifacts = {
         generated_code: executionCode.value,
-        logic_tree: {},
-        atom_list: [],
+        logic_tree:
+          generatedResult?.rule_snapshot?.logic_tree ||
+          generatedResult?.rule_snapshot ||
+          {},
+        atom_list:
+          generatedResult?.rule_snapshot?.atom_list || [],
+        finish_reason: generatedResult?.finish_reason,
+        raw_output: generatedResult?.raw_output,
+        rule_snapshot: generatedResult?.rule_snapshot || {},
+        rule_text:
+          generatedResult?.rule_text ||
+          flowStore.ruleText.trim(),
+        runtime_label: generatedResult?.runtime_label,
+        runtime_mode: generatedResult?.runtime_mode,
+        system_prompt: generatedResult?.system_prompt,
+        tool_schema: generatedResult?.tool_schema,
+        validation: generatedResult?.validation,
       };
       ElMessage.success('编译生成成功');
     } else {

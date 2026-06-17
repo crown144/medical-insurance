@@ -60,6 +60,7 @@ class RuleViewSet(viewsets.ModelViewSet):
                 'validation': generated.validation,
                 'rule_snapshot': generated.rule_snapshot,
                 'raw_output': generated.raw_output,
+                'finish_reason': generated.finish_reason,
                 'runtime_mode': generated.rule_snapshot.get('runtime_mode'),
                 'runtime_label': generated.rule_snapshot.get('runtime_label'),
                 'llm_config': generated.rule_snapshot.get('llm_config'),

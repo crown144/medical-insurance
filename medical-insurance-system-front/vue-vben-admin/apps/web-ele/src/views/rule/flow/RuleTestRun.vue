@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
 
 import {
   CircleCheck,
@@ -9,15 +8,17 @@ import {
   Upload,
   VideoPlay,
 } from '@element-plus/icons-vue';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElLoading, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
-// 路径请根据实际情况调整
+import {
+  importGeneratedRuleApi,
+  runGeneratedRuleApi,
+} from '../../../api/rule';
 import { useRuleFlowStore } from '../../../store/modules/ruleFlow';
 
-const router = useRouter();
 const flowStore = useRuleFlowStore();
-const { ruleText, runResult, activeTab, batchRules, caseJsonText } =
+const { ruleText, runResult, activeTab, batchRules, caseJsonText, artifacts } =
   storeToRefs(flowStore);
 
 const isRunning = ref(false);
@@ -39,7 +40,7 @@ const escapeHtml = (text: any): string => {
     '"': '&quot;',
     "'": '&#039;',
   };
-  return String(text).replaceAll(/[&<>"']/g, (m) => map[m]);
+  return String(text).replaceAll(/[&<>"']/g, (m) => map[m] ?? m);
 };
 
 // 递归将 JSON 转为带高亮的 HTML
@@ -108,7 +109,39 @@ const handleRun = async () => {
 
   try {
     if (activeTab.value === 'manual') {
-      await flowStore.mockRun();
+      let patientData = {};
+      try {
+        patientData = JSON.parse(caseJsonText.value);
+      } catch (error: any) {
+        ElMessage.error(error?.message || '病例JSON格式错误');
+        return;
+      }
+
+      const result = await runGeneratedRuleApi(ruleText.value, patientData);
+      const firstViolation = result?.violations?.[0];
+      runResult.value = {
+        ...result,
+        details: firstViolation || result,
+        logs: [
+          {
+            level: 'INFO',
+            msg: 'RuleAgent: POST /api/rules/agenta/run/',
+            t: new Date().toLocaleTimeString(),
+          },
+          {
+            level: result?.passed ? 'INFO' : 'WARN',
+            msg: result?.reason || '规则执行完成',
+            t: new Date().toLocaleTimeString(),
+          },
+        ],
+      };
+
+      firstViolation?.highlights?.forEach((item: any) => {
+        if (item?.field_path) {
+          highlightPaths.value.add(item.field_path);
+          highlightPaths.value.add(`$.${item.field_path}`);
+        }
+      });
 
       // 模拟高亮逻辑：如果拦截了，高亮一些关键字段
       if (runResult.value && !runResult.value.passed) {
@@ -121,14 +154,30 @@ const handleRun = async () => {
       }
     } else {
       // 批量逻辑保持不变
+      let patientData = {};
+      try {
+        patientData = JSON.parse(caseJsonText.value);
+      } catch (error: any) {
+        ElMessage.error(error?.message || '病例JSON格式错误');
+        return;
+      }
       if (batchRules.value.length === 0) return;
       for (const item of batchRules.value) {
         if (item.status !== 'success') continue;
         item.testStatus = 'running';
-        await new Promise((r) => setTimeout(r, 100));
-        const isPass = Math.random() > 0.3;
-        item.testStatus = 'finished';
-        item.testResult = isPass ? 'PASS' : 'INTERCEPTED';
+        try {
+          const result = await runGeneratedRuleApi(
+            item.rule || item.ruleText || '',
+            patientData,
+          );
+          item.testStatus = 'finished';
+          item.testResult = result?.passed ? 'PASS' : 'INTERCEPTED';
+          item.runResult = result;
+        } catch (error: any) {
+          item.testStatus = 'finished';
+          item.testResult = 'ERROR';
+          item.error = error?.response?.data?.message || error?.message || '规则执行失败';
+        }
       }
     }
     ElMessage.success('执行完成');
@@ -155,17 +204,23 @@ const handleImportSingle = async () => {
         type: 'success',
       },
     );
-    const loading = ElMessage.service({
+    const loading = ElLoading.service({
       fullscreen: true,
       text: '正在入库...',
     });
-    await new Promise((r) => setTimeout(r, 800));
+    const imported = await importGeneratedRuleApi({
+      description: ruleText.value,
+      drugName: '规则转换导入',
+      ruleCode: artifacts.value?.generated_code || runResult.value?.generated_code || '',
+      status: true,
+      type: '智能转换',
+    });
     loading.close();
 
     importedInfo.value = {
-      rule_id: `R-${Date.now().toString(36).toUpperCase()}`,
+      rule_id: imported?.ruleId || imported?.id,
       version: 1,
-      status: 'ACTIVE',
+      status: imported?.enabled ? 'ACTIVE' : 'DISABLED',
       created_at: new Date().toLocaleString(),
     };
     importVisible.value = true;
@@ -180,18 +235,33 @@ const handleImportBatch = async () => {
     await ElMessageBox.confirm(`确认批量发布 ${count} 条规则？`, '批量入库', {
       type: 'success',
     });
-    const loading = ElMessage.service({
+    const loading = ElLoading.service({
       fullscreen: true,
       text: '批量处理中...',
     });
-    await new Promise((r) => setTimeout(r, 1000));
-    batchRules.value.forEach((i) => {
-      if (i.testResult) i.importStatus = 'success';
-    });
+    const importedIds: any[] = [];
+    for (const item of batchRules.value) {
+      if (!item.testResult || item.testResult === 'ERROR') continue;
+      try {
+        const imported = await importGeneratedRuleApi({
+          description: item.rule || item.ruleText || '',
+          drugName: item.category || `批量规则${item.id}`,
+          ruleCode: item.artifacts?.generated_code || item.artifacts?.code_snippet || '',
+          ruleId: item.ruleId,
+          status: true,
+          type: item.category || '智能转换',
+        });
+        item.importStatus = 'success';
+        importedIds.push(imported?.ruleId || imported?.id || `R-${item.id}`);
+      } catch (error: any) {
+        item.importStatus = 'error';
+        item.error = error?.response?.data?.message || error?.message || '规则入库失败';
+      }
+    }
     loading.close();
     batchImportInfo.value = {
       count,
-      ids: batchRules.value.map((i) => `R-${i.id}`),
+      ids: importedIds,
     };
     importVisible.value = true;
   } catch {

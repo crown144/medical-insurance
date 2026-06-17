@@ -1,10 +1,13 @@
 import json
+import os
 import re
 from decimal import Decimal
 from difflib import SequenceMatcher
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from openai import OpenAI
 from results.models import Result
+from rules.services.agenta_service import AgentAService
 
 from ..models import FeiJianImportBatch, FeiJianRawRecord
 
@@ -22,6 +25,7 @@ CATEGORY_ALIASES = {
     '超限定用药': [
         '超限定用药', '超限用药', '超医保限定', '限定支付范围',
         '适应症不符', '超适应症', '超范围用药', '用药限制',
+        '限定用药', '限适应症', '限制用药',
     ],
     '超标准收费': [
         '超标准收费', '超标收费', '超价格收费', '收费超标',
@@ -52,6 +56,7 @@ MATCHED = 'matched'
 PARTIAL = 'partial'
 UNMATCHED = 'unmatched'
 SYSTEM_ONLY = 'system-only'
+LLM_TOP_CANDIDATE_COUNT = 3
 
 MATCH_STATUS_LABELS = {
     MATCHED: '完全匹配',
@@ -64,6 +69,7 @@ MATCH_STATUS_LABELS = {
 def align_batch_results(
     batch: FeiJianImportBatch,
     task_id: Optional[int] = None,
+    use_llm: bool = False,
 ) -> Dict[str, Any]:
     if task_id is None:
         task_id = _infer_task_id(batch)
@@ -88,13 +94,16 @@ def align_batch_results(
 
     used_result_ids = set()
     alignments = []
+    llm_cache: Dict[str, Tuple[float, str]] = {}
+    llm_enabled = use_llm and _has_llm_config()
 
     for record in feijian_records:
-        candidates = [
-            result for result in results_by_hos.get(record.hospitalization_no, [])
-            if result.id not in used_result_ids
-        ]
-        best_result, score, reasons = _find_best_match(record, candidates)
+        candidates = results_by_hos.get(record.hospitalization_no, [])
+        best_result, score, reasons = _find_best_match(
+            record,
+            candidates,
+            llm_cache=llm_cache if llm_enabled else None,
+        )
 
         if best_result and score >= 0.45:
             used_result_ids.add(best_result.id)
@@ -115,6 +124,7 @@ def align_batch_results(
     return {
         'batch_id': batch.id,
         'task_id': task_id,
+        'llm_enabled': llm_enabled,
         'summary': summary,
         'items': alignments,
     }
@@ -138,17 +148,39 @@ def _infer_task_id(batch: FeiJianImportBatch) -> Optional[int]:
 def _find_best_match(
     record: FeiJianRawRecord,
     candidates: Iterable[Result],
+    llm_cache: Optional[Dict[str, Tuple[float, str]]] = None,
 ) -> Tuple[Optional[Result], float, List[str]]:
     best_result = None
     best_score = 0.0
     best_reasons: List[str] = []
+    scored_candidates = []
 
     for result in candidates:
         score, reasons = _score_pair(record, result)
+        scored_candidates.append((result, score, reasons))
         if score > best_score:
             best_result = result
             best_score = score
             best_reasons = reasons
+
+    if llm_cache is not None and scored_candidates and best_score < 0.75:
+        top_candidates = sorted(
+            scored_candidates,
+            key=lambda item: item[1],
+            reverse=True,
+        )[:LLM_TOP_CANDIDATE_COUNT]
+        for result, score, reasons in top_candidates:
+            llm_score, llm_reason = _llm_score_pair(record, result, llm_cache)
+            if llm_score is None:
+                continue
+            merged_reasons = reasons[:]
+            if llm_reason:
+                merged_reasons.append(f'大模型复核：{llm_reason}')
+            candidate_score = llm_score if score < 0.75 else max(score, llm_score)
+            if candidate_score > best_score:
+                best_result = result
+                best_score = candidate_score
+                best_reasons = merged_reasons
 
     return best_result, best_score, best_reasons
 
@@ -189,6 +221,100 @@ def _score_pair(record: FeiJianRawRecord, result: Result) -> Tuple[float, List[s
     return min(score, 1.0), reasons
 
 
+def _has_llm_config() -> bool:
+    config = AgentAService._llm_config()
+    return bool(config.get('api_key') and config.get('base_url') and config.get('model'))
+
+
+def _llm_score_pair(
+    record: FeiJianRawRecord,
+    result: Result,
+    cache: Dict[str, Tuple[float, str]],
+) -> Tuple[Optional[float], str]:
+    cache_key = f'{record.id}:{result.id}'
+    if cache_key in cache:
+        return cache[cache_key]
+
+    feijian_text = _join_text(record.issue_category, record.issue_description)
+    system_text = _system_text(result)
+    prompt = f"""你是医保飞检结果与系统审查结果的对齐专家。请判断同一住院号下，两条问题是否指向同一个医保违规问题。
+
+判断原则：
+1. 飞检问题名称和系统问题名称可以不同，只要业务含义一致即可匹配。
+2. 重点看问题类型、疾病/适应症、药品/收费项目、违规原因是否一致。
+3. “限某疾病/某适应症/事中审核”通常可能对应系统中的“适应症不符/超限定用药”，但不能只因为都有“事中审核”就匹配。
+4. 金额可以辅助判断，但金额不同不一定代表不匹配。
+5. 只返回 JSON，不要返回解释文本。
+
+飞检记录：
+- 住院号：{record.hospitalization_no}
+- 患者：{record.patient_name}
+- 问题类别：{record.issue_category}
+- 问题描述：{record.issue_description}
+- 涉及金额：{record.involved_amount}
+
+系统结果：
+- 规则类型：{getattr(result.rule, 'type', '')}
+- 规则名称：{getattr(result.rule, 'drug_name', '')}
+- 规则描述：{getattr(result.rule, 'description', '')}
+- 系统问题：{_system_issue(result)}
+- 违规项目：{result.violation_item or ''}
+
+返回格式：
+{{"match": true, "score": 0.86, "reason": "同为高磷血症相关超限定用药"}}
+""".strip()
+
+    try:
+        config = AgentAService._llm_config()
+        client = OpenAI(
+            api_key=config['api_key'],
+            base_url=config['base_url'],
+            timeout=float(os.environ.get('FEIJIAN_ALIGNMENT_LLM_TIMEOUT') or 20),
+        )
+        response = client.chat.completions.create(
+            model=os.environ.get('FEIJIAN_ALIGNMENT_MODEL') or config['model'],
+            messages=[
+                {
+                    'role': 'system',
+                    'content': '你只输出严格 JSON。score 必须是 0 到 1 的数字。',
+                },
+                {'role': 'user', 'content': prompt},
+            ],
+            temperature=0,
+            max_tokens=int(os.environ.get('FEIJIAN_ALIGNMENT_MAX_TOKENS') or 300),
+        )
+        raw = response.choices[0].message.content or ''
+        data = _parse_llm_json(raw)
+        if not data:
+            return None, ''
+
+        is_match = bool(data.get('match'))
+        raw_score = data.get('score', 0)
+        score = max(0.0, min(float(raw_score), 1.0))
+        if not is_match:
+            score = min(score, 0.4)
+        reason = _stringify(data.get('reason') or '').strip()
+        cache[cache_key] = (score, reason)
+        return cache[cache_key]
+    except Exception:
+        return None, ''
+
+
+def _parse_llm_json(raw: str) -> Optional[Dict[str, Any]]:
+    raw = raw.strip()
+    if raw.startswith('```'):
+        raw = re.sub(r'^```(?:json)?\s*', '', raw)
+        raw = re.sub(r'\s*```$', '', raw)
+    match = re.search(r'\{[\s\S]*\}', raw)
+    if match:
+        raw = match.group(0)
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
 def canonical_category(text: Any) -> str:
     normalized = normalize_text(text)
     if not normalized:
@@ -196,6 +322,8 @@ def canonical_category(text: Any) -> str:
     for keyword, canonical in CATEGORY_BY_KEYWORD.items():
         if normalize_text(keyword) in normalized:
             return canonical
+    if _looks_like_limited_indication(normalized):
+        return '超限定用药'
     return ''
 
 
@@ -223,7 +351,24 @@ def text_similarity(left: Any, right: Any) -> float:
         overlap = 0.0
 
     sequence = SequenceMatcher(None, left_text, right_text).ratio()
-    return max(overlap, sequence)
+    common = _common_substring_score(left_text, right_text)
+    return max(overlap, sequence, common)
+
+
+def _looks_like_limited_indication(text: str) -> bool:
+    if '限' not in text:
+        return False
+    medical_hint = any(keyword in text for keyword in ['症', '病', '炎', '癌', '瘤', '用药', '药', '适应'])
+    audit_hint = any(keyword in text for keyword in ['审核', '限定', '超限', '医保'])
+    return medical_hint or audit_hint
+
+
+def _common_substring_score(left: str, right: str) -> float:
+    matcher = SequenceMatcher(None, left, right)
+    longest = matcher.find_longest_match(0, len(left), 0, len(right)).size
+    if longest < 3:
+        return 0.0
+    return min(longest / max(min(len(left), len(right)), 1), 1.0)
 
 
 def amount_similarity(left: Decimal, right: Optional[Decimal]) -> Optional[float]:

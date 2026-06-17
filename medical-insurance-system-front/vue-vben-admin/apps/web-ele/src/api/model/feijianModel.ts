@@ -158,6 +158,7 @@ export interface AlignmentSummary {
 export interface AlignResultsResponse {
   batch_id: number;
   items: AlignmentResult[];
+  llm_enabled?: boolean;
   pagination: {
     page: number;
     page_size: number;

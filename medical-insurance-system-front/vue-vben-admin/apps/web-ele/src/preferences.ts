@@ -11,6 +11,7 @@ export const overridesPreferences = defineOverridesPreferences({
     name: '医保控费',
 
     // 登录后默认进入任务列表（你之前已把 mock 的 homePath 也改了，这里再兜底一次）
+    defaultAvatar: '',
     defaultHomePath: '/task/execution',
 
     // 关掉“偏好设置/个性化”（右上角齿轮通常也会一起没了）
