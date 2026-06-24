@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'cases',
     'repeat_charging',
     'feijian',  # 飞检结果管理
+    'rule_import',  # 规则批量导入转换
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -167,3 +168,53 @@ REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10  # 和你前端的 pageSize 保持一致
 }
+
+# ============================================================
+# 规则批量导入转换 (rule_import) 配置
+# 所有敏感/环境相关项均通过环境变量覆盖，避免硬编码到代码里。
+# 部署时通过环境变量设置：
+#   RULE_IMPORT_LLM_API_KEY / RULE_IMPORT_LLM_BASE_URL / ...
+# ============================================================
+import os as _os
+
+# LLM 服务配置
+# 默认指向服务器上自部署的 OpenAI 兼容模型（qwen）。
+# 注意：base_url 取 OpenAI 兼容的「基址」(以 /v1 结尾)，SDK 会自动拼接
+# /chat/completions；不要把完整的 .../chat/completions 路径填进来。
+# 自部署模型通常不校验密钥，默认占位 'EMPTY' 即可，仍可由环境变量覆盖。
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
+RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
+    'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
+)
+# 判断表头用的模型（自部署仅一个模型，默认与抽取模型一致）
+RULE_IMPORT_LLM_MODEL_HEADER = _os.environ.get(
+    'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen',
+)
+# 规则抽取用的模型
+RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
+    'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
+)
+# 单次 LLM 请求超时(秒)
+RULE_IMPORT_LLM_TIMEOUT = int(_os.environ.get('RULE_IMPORT_LLM_TIMEOUT', '60'))
+# 单次 LLM 请求失败重试次数
+RULE_IMPORT_LLM_MAX_RETRIES = int(_os.environ.get('RULE_IMPORT_LLM_MAX_RETRIES', '2'))
+
+# 上传文件大小上限(字节)，默认 50MB
+RULE_IMPORT_MAX_FILE_SIZE = int(
+    _os.environ.get('RULE_IMPORT_MAX_FILE_SIZE', str(50 * 1024 * 1024)),
+)
+# 允许的文件类型
+RULE_IMPORT_ALLOWED_EXTS = ('pdf', 'xlsx', 'xls')
+
+# LLM 分块行数：每次送入大模型抽取的表格行数。仅后端配置，前端不暴露。
+RULE_IMPORT_DEFAULT_CHUNK_SIZE = int(
+    _os.environ.get('RULE_IMPORT_DEFAULT_CHUNK_SIZE', '10'),
+)
+
+# Celery 任务执行时间限制(秒)：抽取任务可能很长
+RULE_IMPORT_TASK_SOFT_TIME_LIMIT = int(
+    _os.environ.get('RULE_IMPORT_TASK_SOFT_TIME_LIMIT', str(60 * 60)),  # 1h
+)
+RULE_IMPORT_TASK_TIME_LIMIT = int(
+    _os.environ.get('RULE_IMPORT_TASK_TIME_LIMIT', str(60 * 60 + 300)),  # 1h5m
+)

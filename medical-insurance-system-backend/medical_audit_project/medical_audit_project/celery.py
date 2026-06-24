@@ -12,6 +12,7 @@ app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 app.conf.imports = (
     'tasks.tasks',
+    'rule_import.tasks',  # 规则批量导入转换异步任务
     # 如果未来你在其他 app (比如 'rules') 里也有 tasks.py，也可以加在这里
     # 'rules.tasks',
 )

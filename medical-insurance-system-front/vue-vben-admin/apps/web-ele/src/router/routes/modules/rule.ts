@@ -33,6 +33,12 @@ const rule: RouteRecordRaw = {
           meta: { title: '规则导入', icon: 'mdi:tray-arrow-up' },
         },
         {
+          path: 'batch-convert',
+          name: 'RuleBatchConvert',
+          component: () => import('#/views/rule/flow/RuleBatchConvert.vue'),
+          meta: { title: '规则批量导入转换', icon: 'mdi:file-document-outline' },
+        },
+        {
           path: 'compile',
           name: 'RuleCompileGenerate',
           component: () => import('#/views/rule/flow/RuleCompileGenerate.vue'),
