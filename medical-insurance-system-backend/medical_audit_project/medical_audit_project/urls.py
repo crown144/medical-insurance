@@ -17,4 +17,5 @@ urlpatterns = [
     path('api/cases/', include('cases.urls')),
     path('api/', include('repeat_charging.urls')),
     path('api/', include('feijian.urls')),
+    path('api/', include('rule_import.urls')),
 ]
