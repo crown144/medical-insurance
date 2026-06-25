@@ -69,6 +69,7 @@ class PreviewRequestSerializer(serializers.Serializer):
 class BuildAuditTaskSerializer(serializers.Serializer):
     """从飞检导入批次构建自动审查任务的请求参数。"""
     name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    mdc_org_cd = serializers.CharField(required=False, allow_blank=True, max_length=50)
     selectedSchemas = serializers.ListField(
         child=serializers.CharField(),
         required=False,

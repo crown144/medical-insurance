@@ -1,6 +1,8 @@
 import { defineConfig } from '@vben/vite-config';
 
 export default defineConfig(async () => {
+  const proxyTarget = process.env.VITE_PROXY_TARGET || 'http://127.0.0.1:8000';
+
   return {
     application: {},
     vite: {
@@ -9,7 +11,7 @@ export default defineConfig(async () => {
         proxy: {
           '/api': {
             // ✅ 1. 指向 Django 后端
-            target: 'http://127.0.0.1:8000',
+            target: proxyTarget,
 
             // ✅ 2. 允许跨域
             changeOrigin: true,

@@ -5,13 +5,13 @@ import random
 from celery import shared_task
 from django.utils import timezone
 from django.db import transaction, close_old_connections
+from django.conf import settings
 from engine.engine import RuleEngine # 导入我们改造后的引擎
 from django.conf import settings
 from cases.models import Case # 导入新的 Case 模型
 
-# 从 data_adapter 导入 MedicalAPI
-import data_adapter.sy 
 from data_adapter.medical_api import MedicalAPI
+from data_adapter.source_db import get_source_db_config
 
 # 导入所有需要的模型
 from .models import Task
@@ -23,13 +23,14 @@ from engine.duplicate_billing import detect_duplicate_charges
 logger = logging.getLogger(__name__)
 
 
-def get_patient_data(hospitalization_id: str):
+def get_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
     """
     数据获取辅助函数，增加了缓存逻辑，并通过“猴子补丁”注入配置。
     """
     # --- 1. 尝试从缓存读取 ---
+    cache_key = f"{mdc_org_cd}:{hospitalization_id}" if mdc_org_cd else hospitalization_id
     try:
-        case = Case.objects.get(pk=hospitalization_id)
+        case = Case.objects.get(pk=cache_key)
         logger.info(f"成功从缓存表 (cases_case) 中命中病历: {hospitalization_id}")
         return case.json_content
     except Case.DoesNotExist:
@@ -54,25 +55,9 @@ def get_patient_data(hospitalization_id: str):
                 raise FileNotFoundError(f"本地模拟数据文件 {hospitalization_id}.json 不存在。")
         
         else:
-            # 生产模式：使用“猴子补丁”动态修改配置
-            logger.info(f"生产模式: 准备为住院号 {hospitalization_id} 动态设置 DB_CONFIG")
-            source_db_config = settings.DATABASES['source_medical_db']
-            
-            # 【猴子补丁】在运行时，强行替换 sy.py 模块里的 DB_CONFIG 全局变量
-            # 注意现在的路径是 data_adapter.preprocess.sy
-            data_adapter.sy.DB_CONFIG = {
-                'host': source_db_config.get('host'),
-                'port': source_db_config.get('port', 3306),
-                'user': source_db_config.get('user'),
-                'password': source_db_config.get('password'),
-                'database': source_db_config.get('database'),
-                'charset': source_db_config.get('charset', 'utf8mb4'),
-                'ssl': source_db_config.get('ssl', {})
-            }
-            
-            # 调用未经修改的 MedicalAPI，它内部会使用我们刚刚修改过的全局 DB_CONFIG
-            medical_api = MedicalAPI()
-            result = medical_api.get_patient_final_json_data(hospitalization_id)
+            logger.info(f"生产模式: 从统一源库配置获取住院号 {hospitalization_id} 的病历")
+            medical_api = MedicalAPI(db_config=get_source_db_config())
+            result = medical_api.get_patient_final_json_data(hospitalization_id, mdc_org_cd)
 
             if result.get('success'):
                 patient_json = result['json_data']
@@ -86,7 +71,7 @@ def get_patient_data(hospitalization_id: str):
     if patient_json:
         try:
             Case.objects.update_or_create(
-                hospitalization_id=hospitalization_id,
+                hospitalization_id=cache_key,
                 defaults={'json_content': patient_json}
             )
             logger.info(f"已将病历 {hospitalization_id} 写入/更新到缓存表 (cases_case)。")
@@ -133,12 +118,13 @@ def run_audit_task(task_id):
         all_rules_for_task = list(task.rules.all())
         processed_count = 0
         total_violation_count = 0
+        mdc_org_cd = (task.mdc_org_cd or getattr(settings, 'SOURCE_MDC_ORG_CD', '') or '').strip()
 
         # --- 2. 循环处理每个住院号 ---
         for hos_id in task.hospitalization_ids:
             try:
                 logger.info(f"--- 正在处理住院号: {hos_id} ---")
-                patient_json = get_patient_data(hos_id)
+                patient_json = get_patient_data(hos_id, mdc_org_cd)
                 if not patient_json or patient_json.get('error'):
                     logger.warning(f"获取住院号 {hos_id} 的病历JSON失败或为空，跳过处理。")
                     continue

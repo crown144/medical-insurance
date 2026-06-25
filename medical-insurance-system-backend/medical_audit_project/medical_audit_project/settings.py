@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -93,16 +94,20 @@ DATABASES = {
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
-    # --- 新增下面这个配置块 ---
     'source_medical_db': {
-        'host': 'localhost', # 注意：这里用的是 pymysql 需要的 key
-        'port': 3306,
-        'user': 'root',
-        'password': '271572', # 你 sy.py 里的密码
-        'database': 'sys',    # 你 sy.py 里的数据库名
-        # 如果需要，可以添加 'charset': 'utf8mb4' 等
+        'host': os.environ.get('SOURCE_DB_HOST', ''),
+        'port': int(os.environ.get('SOURCE_DB_PORT', '3306')),
+        'user': os.environ.get('SOURCE_DB_USER', ''),
+        'password': os.environ.get('SOURCE_DB_PASSWORD', ''),
+        'database': os.environ.get('SOURCE_DB_NAME', ''),
+        'charset': 'utf8mb4',
     }
 }
+
+SOURCE_MDC_ORG_CD = os.environ.get('SOURCE_MDC_ORG_CD', '')
+INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
+INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
+INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 

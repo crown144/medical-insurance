@@ -412,8 +412,10 @@ def _build_alignment(
     score: float,
     reasons: List[str],
 ) -> Dict[str, Any]:
-    system_category = canonical_category(_system_text(result)) if result else ''
-    feijian_category = canonical_category(_join_text(record.issue_category, record.issue_description))
+    feijian_text = _join_text(record.issue_category, record.issue_description)
+    system_text = _system_text(result)
+    system_category = canonical_category(system_text) if result else ''
+    feijian_category = canonical_category(feijian_text)
     return {
         'id': f'f{record.id}-s{result.id if result else "none"}',
         'feijianRecordId': record.id,
@@ -426,17 +428,26 @@ def _build_alignment(
         'feijianAmount': float(record.involved_amount or 0),
         'feijianCategory': feijian_category or record.issue_category,
         'systemIssue': _system_issue(result),
-        'systemAmount': float(_extract_amount(_system_text(result)) or 0),
+        'systemAmount': float(_extract_amount(system_text) or 0),
         'systemCategory': system_category,
         'matchStatus': status,
         'matchStatusLabel': MATCH_STATUS_LABELS[status],
         'matchScore': round(score, 3),
         'matchReasons': reasons,
+        'matchDebug': {
+            'feijianText': feijian_text,
+            'systemText': system_text,
+            'feijianNormalizedText': normalize_text(feijian_text),
+            'systemNormalizedText': normalize_text(system_text),
+            'feijianNormalizedCategory': feijian_category,
+            'systemNormalizedCategory': system_category,
+        },
     }
 
 
 def _build_system_only_alignment(result: Result) -> Dict[str, Any]:
     system_text = _system_text(result)
+    system_category = canonical_category(system_text)
     return {
         'id': f'fnone-s{result.id}',
         'feijianRecordId': None,
@@ -450,10 +461,18 @@ def _build_system_only_alignment(result: Result) -> Dict[str, Any]:
         'feijianCategory': '',
         'systemIssue': _system_issue(result),
         'systemAmount': float(_extract_amount(system_text) or 0),
-        'systemCategory': canonical_category(system_text),
+        'systemCategory': system_category,
         'matchStatus': SYSTEM_ONLY,
         'matchStatusLabel': MATCH_STATUS_LABELS[SYSTEM_ONLY],
         'matchScore': 0,
+        'matchDebug': {
+            'feijianText': '',
+            'systemText': system_text,
+            'feijianNormalizedText': '',
+            'systemNormalizedText': normalize_text(system_text),
+            'feijianNormalizedCategory': '',
+            'systemNormalizedCategory': system_category,
+        },
         'matchReasons': ['同住院号下未找到对应飞检问题'],
     }
 

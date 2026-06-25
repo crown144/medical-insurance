@@ -13,6 +13,7 @@ export interface TaskItem {
   name: string;
   status: TaskStatus;
   hospitalization_ids: string[];
+  mdc_org_cd?: string;
   summary: null | string;
   created_at: string;
   started_at: null | string;
@@ -53,16 +54,24 @@ export interface InhosSearchParams {
   start_date?: string;
   end_date?: string;
   drug_name?: string;
+  mdc_org_cd?: string;
 }
 
 export interface InhosSearchResponse {
+  count: number;
+  filter_type?: 'date_and_drug' | 'date_only' | 'drug_only';
   inhos_numbers: string[];
+  limit: number;
+  success: boolean;
+  truncated: boolean;
+  warning?: string;
 }
 
 // 👇👇👇 重点检查这里，必须有 export 👇👇👇
 export interface CreateTaskParams {
   name: string;
   hospitalization_ids: string[];
+  mdc_org_cd: string;
   rule_ids: number[];
   selectedSchemas: string[];
   repeatChargingChildCodes?: string[];
