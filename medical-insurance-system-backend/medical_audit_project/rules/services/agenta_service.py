@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
+from django.conf import settings
 from openai import OpenAI
 
 
@@ -29,19 +30,26 @@ class AgentAService:
 
     @classmethod
     def _llm_config(cls) -> dict[str, Any]:
-        base_url = (
-            os.environ.get('AGENTA_BASE_URL')
-            or os.environ.get('DASHSCOPE_BASE_URL')
-            or 'https://dashscope.aliyuncs.com/compatible-mode/v1'
-        )
         return {
-            'base_url': cls._normalize_base_url(base_url),
-            'model': os.environ.get('AGENTA_MODEL')
-            or os.environ.get('DASHSCOPE_MODEL')
-            or 'qwen3.5-35b-a3b',
-            'api_key': os.environ.get('AGENTA_API_KEY')
-            or os.environ.get('DASHSCOPE_API_KEY')
-            or '',
+            'base_url': cls._normalize_base_url(
+                getattr(
+                    settings,
+                    'RULE_COMPILE_LLM_BASE_URL',
+                    'https://dashscope.aliyuncs.com/compatible-mode/v1',
+                ),
+            ),
+            'model': getattr(
+                settings,
+                'RULE_COMPILE_LLM_MODEL',
+                'qwen3.5-35b-a3b',
+            ),
+            'api_key': getattr(settings, 'RULE_COMPILE_LLM_API_KEY', '') or '',
+            'max_tokens': int(
+                getattr(settings, 'RULE_COMPILE_LLM_MAX_TOKENS', 6000),
+            ),
+            'timeout': int(
+                getattr(settings, 'RULE_COMPILE_LLM_TIMEOUT', 120),
+            ),
         }
 
     @staticmethod
@@ -61,8 +69,12 @@ class AgentAService:
         config = cls._llm_config()
         api_key = config['api_key']
         if not api_key:
-            raise ValueError('未配置 AGENTA_API_KEY / DASHSCOPE_API_KEY，请先设置阿里云百炼 API Key')
-        client = OpenAI(api_key=api_key, base_url=config['base_url'])
+            raise ValueError('未配置 RULE_COMPILE_LLM_API_KEY，请先在 settings 或环境变量中配置规则编译模型 API Key')
+        client = OpenAI(
+            api_key=api_key,
+            base_url=config['base_url'],
+            timeout=config['timeout'],
+        )
         return client, config['model']
 
     @staticmethod
@@ -183,7 +195,7 @@ class AgentAService:
                 {'role': 'user', 'content': user_prompt},
             ],
             temperature=0.1,
-            max_tokens=int(os.environ.get('AGENTA_MAX_TOKENS') or 6000),
+            max_tokens=cls._llm_config()['max_tokens'],
         )
 
         choice = response.choices[0]
@@ -199,7 +211,7 @@ class AgentAService:
             'base_url': cls._llm_config()['base_url'],
             'model': model,
             'provider': 'aliyun_bailian_qwen',
-            'max_tokens': int(os.environ.get('AGENTA_MAX_TOKENS') or 6000),
+            'max_tokens': cls._llm_config()['max_tokens'],
         }
         return AgentAGenerationResult(
             rule_text=rule_text,

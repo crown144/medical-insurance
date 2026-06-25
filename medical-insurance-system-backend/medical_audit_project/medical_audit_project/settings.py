@@ -90,7 +90,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': '224898504@Wyx',
+        'PASSWORD': '555321',
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
@@ -191,6 +191,7 @@ RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
 )
+
 # 判断表头用的模型（自部署仅一个模型，默认与抽取模型一致）
 RULE_IMPORT_LLM_MODEL_HEADER = _os.environ.get(
     'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen',
@@ -199,6 +200,7 @@ RULE_IMPORT_LLM_MODEL_HEADER = _os.environ.get(
 RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
     'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
 )
+
 # 单次 LLM 请求超时(秒)
 RULE_IMPORT_LLM_TIMEOUT = int(_os.environ.get('RULE_IMPORT_LLM_TIMEOUT', '60'))
 # 单次 LLM 请求失败重试次数
@@ -222,4 +224,39 @@ RULE_IMPORT_TASK_SOFT_TIME_LIMIT = int(
 )
 RULE_IMPORT_TASK_TIME_LIMIT = int(
     _os.environ.get('RULE_IMPORT_TASK_TIME_LIMIT', str(60 * 60 + 300)),  # 1h5m
+)
+
+# ============================================================
+# 规则编译 (rules/agenta) LLM 配置
+# 与 rule_import 一样统一收口到 settings，由环境变量覆盖。
+# ============================================================
+RULE_COMPILE_LLM_API_KEY = _os.environ.get(
+    'RULE_COMPILE_LLM_API_KEY',
+    _os.environ.get('AGENTA_API_KEY', _os.environ.get('DASHSCOPE_API_KEY', '')),
+)
+RULE_COMPILE_LLM_BASE_URL = _os.environ.get(
+    'RULE_COMPILE_LLM_BASE_URL',
+    _os.environ.get(
+        'AGENTA_BASE_URL',
+        _os.environ.get(
+            'DASHSCOPE_BASE_URL',
+            'http://127.0.0.1:9234/v1',
+        ),
+    ),
+)
+RULE_COMPILE_LLM_MODEL = _os.environ.get(
+    'RULE_COMPILE_LLM_MODEL',
+    _os.environ.get(
+        'AGENTA_MODEL',
+        _os.environ.get('DASHSCOPE_MODEL', 'qwen'),
+    ),
+)
+RULE_COMPILE_LLM_MAX_TOKENS = int(
+    _os.environ.get(
+        'RULE_COMPILE_LLM_MAX_TOKENS',
+        _os.environ.get('AGENTA_MAX_TOKENS', '6000'),
+    ),
+)
+RULE_COMPILE_LLM_TIMEOUT = int(
+    _os.environ.get('RULE_COMPILE_LLM_TIMEOUT', '120'),
 )

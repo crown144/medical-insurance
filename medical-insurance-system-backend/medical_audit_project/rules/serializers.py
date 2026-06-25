@@ -15,7 +15,24 @@ class RuleSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Rule
-        fields = ['id', 'drugName', 'ruleId', 'description', 'logicExpression', 'enabled', 'type', 'rule_code']
+        fields = [
+            'id',
+            'drugName',
+            'ruleId',
+            'description',
+            'logicExpression',
+            'enabled',
+            'type',
+            'rule_code',
+            'created_at',
+            'updated_at',
+        ]
+
+    @staticmethod
+    def _has_rule_code(value):
+        if value is None:
+            return False
+        return bool(str(value).strip())
 
     def to_internal_value(self, data):
         data = data.copy()
@@ -36,3 +53,21 @@ class RuleSerializer(serializers.ModelSerializer):
         data.setdefault('logicExpression', '')
         data.setdefault('enabled', True)
         return super().to_internal_value(data)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+
+        next_status = attrs.get('status')
+        if next_status is None and self.instance is not None:
+            next_status = self.instance.status
+
+        next_rule_code = attrs.get('rule_code')
+        if next_rule_code is None and self.instance is not None:
+            next_rule_code = self.instance.rule_code
+
+        if next_status and not self._has_rule_code(next_rule_code):
+            raise serializers.ValidationError({
+                'enabled': '规则未生成执行代码，无法启用',
+            })
+
+        return attrs
