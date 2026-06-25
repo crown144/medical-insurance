@@ -70,6 +70,14 @@ interface RuleRow {
 
 let uid = 1;
 
+function hasExecutableCode(ruleCode?: null | string) {
+  return Boolean((ruleCode || '').trim());
+}
+
+function isCompiled(rule: { ruleCode?: null | string; rule_code?: null | string }) {
+  return Boolean((rule.rule_code || rule.ruleCode || '').trim());
+}
+
 /** 规则名提取：符合你举例 */
 function extractRuleName(desc: string) {
   const s = (desc || '').trim();
@@ -198,6 +206,11 @@ watch(keyword, () => {
 
 // 状态切换处理
 const handleStatusChange = async (row: RuleRow) => {
+  if (!hasExecutableCode(row.ruleCode)) {
+    row.enabled = false;
+    ElMessage.warning('该规则未生成执行代码，无法启用');
+    return;
+  }
   const originalStatus = !row.enabled;
   try {
     await toggleRuleStatus(row.id, row.enabled);
@@ -542,6 +555,13 @@ function formatParams(params: any) {
       />
 
       <!-- ⑤ 原始描述 -->
+      <el-table-column label="编译状态" width="120" align="center">
+        <template #default="{ row }">
+          <el-tag :type="isCompiled(row) ? 'success' : 'warning'" size="small">
+            {{ isCompiled(row) ? '已编译' : '未编译' }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column
         prop="description"
         label="原始描述"
@@ -567,13 +587,22 @@ function formatParams(params: any) {
       <el-table-column label="操作" width="280" fixed="right" align="center">
         <template #default="scope">
           <div class="op-links">
-            <el-switch
-              v-model="scope.row.enabled"
-              inline-prompt
-              active-text="启"
-              inactive-text="停"
-              @change="handleStatusChange(scope.row)"
-            />
+            <el-tooltip
+              :disabled="hasExecutableCode(scope.row.ruleCode)"
+              content="该规则未生成执行代码，无法启用"
+              placement="top"
+            >
+              <span class="switch-wrapper">
+                <el-switch
+                  v-model="scope.row.enabled"
+                  inline-prompt
+                  active-text="启"
+                  inactive-text="停"
+                  :disabled="!hasExecutableCode(scope.row.ruleCode)"
+                  @change="handleStatusChange(scope.row)"
+                />
+              </span>
+            </el-tooltip>
             <span class="op-sep">|</span>
             <el-button
               link
@@ -666,7 +695,18 @@ function formatParams(params: any) {
         </el-form-item>
 
         <el-form-item label="是否启用">
-          <el-switch v-model="form.enabled" />
+          <el-tooltip
+            :disabled="hasExecutableCode(form.ruleCode)"
+            content="该规则未生成执行代码，无法启用"
+            placement="top"
+          >
+            <span class="switch-wrapper">
+              <el-switch
+                v-model="form.enabled"
+                :disabled="!hasExecutableCode(form.ruleCode)"
+              />
+            </span>
+          </el-tooltip>
         </el-form-item>
 
         <el-form-item label="规则代码 (Python)">
@@ -890,6 +930,10 @@ function formatParams(params: any) {
 .op-btn {
   padding: 0;
   font-size: 13px;
+}
+
+.switch-wrapper {
+  display: inline-flex;
 }
 
 /* 详情表格样式 */

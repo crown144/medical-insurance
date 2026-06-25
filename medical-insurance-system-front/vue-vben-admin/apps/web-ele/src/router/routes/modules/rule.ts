@@ -13,47 +13,35 @@ const rule: RouteRecordRaw = {
     icon: 'mdi:script-text-outline',
     order: 10,
   },
-  redirect: '/rule/import/import',
+  redirect: '/rule/import/batch-convert',
   children: [
-    // ========== 规则导入与校验 ==========
     {
       path: 'import',
       name: 'RuleImportAndValidate',
       component: ParentView,
       meta: {
-        title: '规则导入与校验',
+        title: '规则导入与编译',
         icon: 'mdi:clipboard-check-outline',
       },
-      redirect: '/rule/import/import',
+      redirect: '/rule/import/batch-convert',
       children: [
-        {
-          path: 'import',
-          name: 'RuleImport',
-          component: () => import('#/views/rule/flow/RuleImport.vue'),
-          meta: { title: '规则导入', icon: 'mdi:tray-arrow-up' },
-        },
         {
           path: 'batch-convert',
           name: 'RuleBatchConvert',
           component: () => import('#/views/rule/flow/RuleBatchConvert.vue'),
-          meta: { title: '规则批量导入转换', icon: 'mdi:file-document-outline' },
+          meta: {
+            title: '规则批量导入转换',
+            icon: 'mdi:file-document-outline',
+          },
         },
         {
           path: 'compile',
-          name: 'RuleCompileGenerate',
-          component: () => import('#/views/rule/flow/RuleCompileGenerate.vue'),
-          meta: { title: '规则编译生成', icon: 'mdi:cog-outline' },
-        },
-        {
-          path: 'simulate',
-          name: 'RuleTestRun',
-          component: () => import('#/views/rule/flow/RuleTestRun.vue'),
-          meta: { title: '执行与校验', icon: 'mdi:play-circle-outline' },
+          name: 'RuleCompile',
+          component: () => import('#/views/rule/flow/RuleCompile.vue'),
+          meta: { title: '规则编译', icon: 'mdi:cog-outline' },
         },
       ],
     },
-
-    // ========== 规则库 ==========
     {
       path: 'library',
       name: 'RuleLibrary',
@@ -64,6 +52,12 @@ const rule: RouteRecordRaw = {
       },
       redirect: '/rule/library/limited-drug',
       children: [
+        {
+          path: 'all-rules',
+          name: 'AllRules',
+          component: () => import('#/views/rule/AllRules.vue'),
+          meta: { title: '全部规则', icon: 'mdi:format-list-bulleted' },
+        },
         {
           path: 'limited-drug',
           name: 'RuleLimitedDrug',
