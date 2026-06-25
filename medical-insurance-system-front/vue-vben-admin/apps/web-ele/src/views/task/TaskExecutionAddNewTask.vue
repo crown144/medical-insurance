@@ -1,11 +1,15 @@
-<script setup lang="ts">
-import type { RuleItem } from '../../api/model/taskModel';
+﻿<script setup lang="ts">
+import type {
+  InhosSearchParams,
+  RuleItem,
+} from '../../api/model/taskModel';
 
 import { nextTick, onMounted, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue';
 import {
+  ElAlert,
   ElButton,
   ElCheckbox,
   ElCollapseTransition,
@@ -22,7 +26,6 @@ import {
 // API 和 组件 (保持您的引用路径)
 import {
   createTaskApi,
-  getFatherChildRulesApi,
   getRuleListApi,
   searchInhosApi,
 } from '../../api/task';
@@ -31,6 +34,7 @@ import {
 // --- 数据接口 ---
 interface NewTaskForm {
   name: string;
+  mdc_org_cd: string;
   hospitalization_ids: string[];
   selected_rule_ids: number[]; // 超限定用药选中的ID
   discharge_date_start: string;
@@ -41,6 +45,7 @@ interface NewTaskForm {
 const router = useRouter();
 const form = ref<NewTaskForm>({
   name: '',
+  mdc_org_cd: '',
   hospitalization_ids: [],
   selected_rule_ids: [],
   discharge_date_start: '',
@@ -64,25 +69,23 @@ const isCreatingTask = ref(false);
 const ruleSearchQuery = ref('');
 const isLoadingInhos = ref(false);
 const inhosSearchResults = ref<string[]>([]);
+const inhosSearchWarning = ref('');
+const inhosSearchLimit = ref(0);
 
 /** 规则名提取：从描述中提取规则名 (复用自 RuleDetail.vue) */
 function extractRuleName(desc: string) {
   const s = (desc || '').trim();
   if (!s) return '';
 
-  // 1) “使用XXX须有...” -> XXX
-  const m1 = s.match(/^使用(.+?)(须有|[限且并，。]|需要)/);
+  const m1 = s.match(/^使用(.+?)(须有|[限且并，、]|需要)/);
   if (m1?.[1]) return m1[1].trim();
 
-  // 2) “XXX 插胃管加收10元” -> 取空格前作为规则名（胃肠减压）
-  if (s.includes(' ')) return s.split(' ')[0].trim();
+  if (s.includes(' ')) return (s.split(' ')[0] || '').trim();
 
-  // 3) “A与B不能同时开” -> A & B
-  const m2 = s.match(/^“?(.+?)”?\s*与\s*“?(.+?)”?\s*不能/);
+  const m2 = s.match(/^"?(.+?)"?\s*与\s*"?(.+?)"?\s*不能/);
   if (m2?.[1] && m2?.[2]) return `${m2[1].trim()} & ${m2[2].trim()}`;
 
-  // 4) fallback
-  return s.length > 14 ? `${s.slice(0, 14)}…` : s;
+  return s.length > 14 ? `${s.slice(0, 14)}...` : s;
 }
 
 /** 处理规则数据：填充 drug_name */
@@ -203,13 +206,18 @@ watch([detectionSchemes, ruleSearchQuery], loadAllRules, { deep: true });
 onMounted(loadAllRules);
 
 const searchInhosNumbers = async () => {
+  if (!form.value.mdc_org_cd.trim()) {
+    ElMessage.warning('请输入医疗机构代码');
+    return;
+  }
   if (!form.value.discharge_date_start && !form.value.drug_name.trim()) {
     ElMessage.warning('请至少选择日期或输入药品名称进行筛选');
     return;
   }
   isLoadingInhos.value = true;
   try {
-    const params: any = {};
+    const params: InhosSearchParams = {};
+    params.mdc_org_cd = form.value.mdc_org_cd.trim();
     if (form.value.discharge_date_start)
       params.start_date = form.value.discharge_date_start;
     if (form.value.discharge_date_end)
@@ -219,11 +227,17 @@ const searchInhosNumbers = async () => {
 
     const res = await searchInhosApi(params);
     inhosSearchResults.value = res.inhos_numbers || [];
+    inhosSearchWarning.value = res.truncated ? (res.warning || '') : '';
+    inhosSearchLimit.value = res.limit;
 
     if (inhosSearchResults.value.length === 0) {
       ElMessage.info('未找到匹配的住院号');
+    } else if (res.truncated) {
+      ElMessage.warning(
+        res.warning || `仅返回前 ${res.limit} 条，请缩小查询范围`,
+      );
     } else {
-      ElMessage.success(`找到 ${inhosSearchResults.value.length} 个住院号`);
+      ElMessage.success(`返回 ${res.count} 个住院号`);
     }
   } catch (error) {
     console.error(error);
@@ -251,6 +265,8 @@ const resetFilter = () => {
   form.value.discharge_date_end = '';
   form.value.drug_name = '';
   inhosSearchResults.value = [];
+  inhosSearchWarning.value = '';
+  inhosSearchLimit.value = 0;
 };
 
 const clearSelectedInhos = () => {
@@ -285,6 +301,7 @@ const handleRuleSelectionChange = (selectedRows: RuleItem[]) => {
 
 const createTask = async () => {
   if (!form.value.name.trim()) return ElMessage.warning('请输入任务名称');
+  if (!form.value.mdc_org_cd.trim()) return ElMessage.warning('请输入医疗机构代码');
   if (form.value.hospitalization_ids.length === 0)
     return ElMessage.warning('请输入至少一个住院号');
 
@@ -312,6 +329,7 @@ const createTask = async () => {
 
     const payload = {
       name: form.value.name,
+      mdc_org_cd: form.value.mdc_org_cd.trim(),
       hospitalization_ids: form.value.hospitalization_ids,
       rule_ids: allSelectedRuleIds, // 统一提交
       selectedSchemas,
@@ -364,6 +382,17 @@ const goBack = () => router.back();
               v-model="form.name"
               placeholder="例如：2025年第一季度超限定用药审核"
               size="large"
+            />
+          </div>
+          <div class="query-item" style="width: 220px">
+            <div class="query-label">
+              医疗机构代码 <span class="required">*</span>
+            </div>
+            <ElInput
+              v-model="form.mdc_org_cd"
+              placeholder="MDC_ORG_CD"
+              size="large"
+              clearable
             />
           </div>
         </div>
@@ -423,9 +452,23 @@ const goBack = () => router.back();
           </div>
         </div>
 
+        <ElAlert
+          v-if="inhosSearchWarning"
+          :title="inhosSearchWarning"
+          type="warning"
+          show-icon
+          :closable="false"
+          class="mb-3"
+        />
+
         <div v-if="inhosSearchResults.length > 0" class="result-area">
           <div class="area-header">
-            <span>查询结果 ({{ inhosSearchResults.length }})</span>
+            <span>
+              查询结果 ({{ inhosSearchResults.length }})
+              <template v-if="inhosSearchWarning">
+                ，单次上限 {{ inhosSearchLimit }} 条
+              </template>
+            </span>
             <ElButton
               type="primary"
               link
@@ -760,6 +803,12 @@ const goBack = () => router.back();
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+.form-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 16px;
 }
 .query-left {
   display: flex;

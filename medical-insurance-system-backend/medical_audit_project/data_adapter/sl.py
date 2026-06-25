@@ -169,15 +169,9 @@ def 示例6_自定义数据库配置():
     """
     print("\n=== 示例6：自定义数据库配置 ===")
     
-    # 自定义数据库配置（如果需要的话）
-    custom_db_config = {
-        "host": "localhost",
-        "port": 3306,
-        "user": "root",
-        "password": "hainan",  # 使用sy.py中的密码
-        "database": "sys",
-        "ssl": {"ssl": {}}
-    }
+    from source_db import get_source_db_config
+
+    custom_db_config = get_source_db_config()
     
     # 测试自定义配置
     result = test_database_connection(custom_db_config)
@@ -240,12 +234,7 @@ if __name__ == "__main__":
             示例6_自定义数据库配置()
             示例7_显示JSON前100行()
         else:
-            print("\n数据库连接失败，请检查sy.py中的数据库配置")
-            print("当前配置应该是:")
-            print("  host: localhost")
-            print("  user: root")
-            print("  password: hainan")
-            print("  database: sys")
+            print("\n数据库连接失败，请检查 SOURCE_DB_* 环境变量")
         
         print("\n=== 所有示例运行完成 ===")
         

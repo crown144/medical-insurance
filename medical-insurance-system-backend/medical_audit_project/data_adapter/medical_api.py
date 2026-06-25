@@ -8,7 +8,9 @@ import traceback
 
 # 已根据文件结构修改导入路径，确保sy.py在同一目录下
 try:
-    from .sy import MedicalDataProcessor, MedicalRecordConverter, DB_CONFIG
+    from . import sy
+    from .sy import MedicalDataProcessor, MedicalRecordConverter
+    from .source_db import get_source_db_config
 except ImportError as e:
     print(f"错误：无法导入sy.py中的类，请确保sy.py文件在同一目录下。错误详情：{e}")
     sys.exit(1)
@@ -22,24 +24,26 @@ class MedicalAPI:
     def __init__(self, db_config=None):
         """
         初始化API
-        
+
         Args:
             db_config: 数据库配置，如果不提供则使用sy.py中的默认配置
         """
-        self.db_config = db_config or DB_CONFIG
+        self.db_config = db_config or get_source_db_config()
+        sy.DB_CONFIG = self.db_config
         self.processor = None
         self.converter = MedicalRecordConverter()
         
-    def get_patient_json_data(self, inhos_no: str, modules: List[str] = None, 
+    def get_patient_json_data(self, inhos_no: str, mdc_org_cd: str = None, modules: List[str] = None,
                              icd10_ranges: List[str] = None) -> Dict[str, Any]:
         """
         获取单个患者的JSON数据（不保存文件）
-        
+
         Args:
             inhos_no: 住院号
+            mdc_org_cd: 医疗代码
             modules: 需要处理的模块列表，如 ["pathology", "diagnosis"]
             icd10_ranges: ICD10范围列表，如 ["I20-I25"]
-            
+
         Returns:
             {
                 "success": bool,
@@ -49,13 +53,13 @@ class MedicalAPI:
         """
         try:
             # 创建处理器实例
-            processor = MedicalDataProcessor(inhos_no)
-            
+            processor = MedicalDataProcessor(inhos_no, mdc_org_cd)
+
             # 处理模块数据
             # 如果modules为None或空列表，传递None给process_modules使用默认模块
             modules_to_process = modules if modules else None
             json_data = processor.process_modules(modules_to_process)
-            
+
             # 如果指定了ICD10范围，进行过滤
             if icd10_ranges and json_data:
                 # 提取主要ICD10编码
@@ -67,12 +71,12 @@ class MedicalAPI:
                             "success": False,
                             "error": f"患者ICD10编码 {main_icd10} 不在指定范围 {icd10_ranges} 内"
                         }
-            
+
             return {
                 "success": True,
                 "json_data": json_data
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -80,13 +84,14 @@ class MedicalAPI:
             }
 
     # --- 新增方法：获取最终格式的数据 ---
-    def get_patient_final_json_data(self, inhos_no: str) -> Dict[str, Any]:
+    def get_patient_final_json_data(self, inhos_no: str, mdc_org_cd: str = None) -> Dict[str, Any]:
         """
         获取单个患者【最终格式】的JSON数据（包含重命名等完整处理流程）
-        
+
         Args:
             inhos_no: 住院号
-            
+            mdc_org_cd: 医疗代码
+
         Returns:
             {
                 "success": bool,
@@ -96,11 +101,11 @@ class MedicalAPI:
         """
         try:
             # 创建sy.py中的核心处理器实例
-            processor = MedicalDataProcessor(inhos_no)
-            
+            processor = MedicalDataProcessor(inhos_no, mdc_org_cd)
+
             # 调用最完整的处理函数，但设置不输出文件
             final_data = processor.process_all_and_export(output_file=None)
-            
+
             # 检查是否因数据不完整而提前终止
             if final_data.get("提前终止"):
                 return {
@@ -118,17 +123,19 @@ class MedicalAPI:
                 "error": f"处理时发生严重错误: {e}\n{traceback.format_exc()}"
             }
             
-    def get_batch_patients_json_data(self, inhos_list: List[str], 
+    def get_batch_patients_json_data(self, inhos_list: List[str],
+                                   mdc_org_cd: str = None,
                                    modules: List[str] = None,
                                    icd10_ranges: List[str] = None) -> Dict[str, Any]:
         """
         批量获取患者JSON数据（不保存文件）
-        
+
         Args:
             inhos_list: 住院号列表
+            mdc_org_cd: 医疗代码
             modules: 需要处理的模块列表
             icd10_ranges: ICD10范围列表
-            
+
         Returns:
             {
                 "total": int,
@@ -153,10 +160,10 @@ class MedicalAPI:
         failed_count = 0
         patients_data = []
         failed_records = []
-        
+
         for inhos_no in inhos_list:
-            result = self.get_patient_json_data(inhos_no, modules, icd10_ranges)
-            
+            result = self.get_patient_json_data(inhos_no, mdc_org_cd, modules, icd10_ranges)
+
             if result["success"]:
                 success_count += 1
                 patients_data.append({
@@ -169,7 +176,7 @@ class MedicalAPI:
                     "inhos_no": inhos_no,
                     "error": result["error"]
                 })
-        
+
         return {
             "total": total,
             "success_count": success_count,
@@ -179,17 +186,19 @@ class MedicalAPI:
         }
     
     def save_patient_json_to_file(self, inhos_no: str, output_dir: str,
+                                 mdc_org_cd: str = None,
                                  modules: List[str] = None,
                                  icd10_ranges: List[str] = None) -> Dict[str, Any]:
         """
         获取患者数据并保存到文件
-        
+
         Args:
             inhos_no: 住院号
             output_dir: 输出目录
+            mdc_org_cd: 医疗代码
             modules: 需要处理的模块列表
             icd10_ranges: ICD10范围列表
-            
+
         Returns:
             {
                 "success": bool,
@@ -199,24 +208,24 @@ class MedicalAPI:
         """
         try:
             # 获取JSON数据
-            result = self.get_patient_json_data(inhos_no, modules, icd10_ranges)
-            
+            result = self.get_patient_json_data(inhos_no, mdc_org_cd, modules, icd10_ranges)
+
             if not result["success"]:
                 return result
-            
+
             # 保存到文件
             import json
             os.makedirs(output_dir, exist_ok=True)
             file_path = os.path.join(output_dir, f"{inhos_no}.json")
-            
+
             with open(file_path, 'w', encoding='utf-8') as f:
                 json.dump(result["json_data"], f, ensure_ascii=False, indent=2)
-            
+
             return {
                 "success": True,
                 "file_path": file_path
             }
-            
+
         except Exception as e:
             return {
                 "success": False,
@@ -308,76 +317,81 @@ class MedicalAPI:
 
 # --- 便捷函数 ---
 
-def get_patient_json_data(inhos_no: str, modules: List[str] = None,
+def get_patient_json_data(inhos_no: str, mdc_org_cd: str = None, modules: List[str] = None,
                          icd10_ranges: List[str] = None,
                          db_config: Dict = None) -> Dict[str, Any]:
     """
     便捷函数：获取单个患者的JSON数据
-    
+
     Args:
         inhos_no: 住院号
+        mdc_org_cd: 医疗代码
         modules: 需要处理的模块列表
         icd10_ranges: ICD10范围列表
         db_config: 数据库配置（可选，默认使用sy.py中的配置）
-        
+
     Returns:
         包含成功状态和JSON数据的字典
     """
     api = MedicalAPI(db_config)
-    return api.get_patient_json_data(inhos_no, modules, icd10_ranges)
+    return api.get_patient_json_data(inhos_no, mdc_org_cd, modules, icd10_ranges)
 
 # --- 新增便捷函数 ---
-def get_patient_final_json_data(inhos_no: str, db_config: Dict = None) -> Dict[str, Any]:
+def get_patient_final_json_data(inhos_no: str, mdc_org_cd: str = None, db_config: Dict = None) -> Dict[str, Any]:
     """
     便捷函数：获取单个患者的【最终格式】JSON数据
-    
+
     Args:
         inhos_no: 住院号
+        mdc_org_cd: 医疗代码
         db_config: 数据库配置（可选）
-        
+
     Returns:
         包含成功状态和最终格式JSON数据的字典
     """
     api = MedicalAPI(db_config)
-    return api.get_patient_final_json_data(inhos_no)
+    return api.get_patient_final_json_data(inhos_no, mdc_org_cd)
 
-def get_batch_patients_json_data(inhos_list: List[str], modules: List[str] = None,
+def get_batch_patients_json_data(inhos_list: List[str], mdc_org_cd: str = None, modules: List[str] = None,
                                 icd10_ranges: List[str] = None,
                                 db_config: Dict = None) -> Dict[str, Any]:
     """
     便捷函数：批量获取患者JSON数据
-    
+
     Args:
         inhos_list: 住院号列表
+        mdc_org_cd: 医疗代码
         modules: 需要处理的模块列表
         icd10_ranges: ICD10范围列表
         db_config: 数据库配置（可选，默认使用sy.py中的配置）
-        
+
     Returns:
         包含批量处理结果的字典
     """
     api = MedicalAPI(db_config)
-    return api.get_batch_patients_json_data(inhos_list, modules, icd10_ranges)
+    return api.get_batch_patients_json_data(inhos_list, mdc_org_cd, modules, icd10_ranges)
 
 def save_patient_json_to_file(inhos_no: str, output_dir: str,
+                             mdc_org_cd: str = None,
                              modules: List[str] = None,
                              icd10_ranges: List[str] = None,
                              db_config: Dict = None) -> Dict[str, Any]:
     """
     便捷函数：获取患者数据并保存到文件
-    
+
     Args:
         inhos_no: 住院号
         output_dir: 输出目录
+        mdc_org_cd: 医疗代码
         modules: 需要处理的模块列表
         icd10_ranges: ICD10范围列表
         db_config: 数据库配置（可选，默认使用sy.py中的配置）
-        
+
     Returns:
         包含成功状态和文件路径的字典
     """
     api = MedicalAPI(db_config)
-    return api.save_patient_json_to_file(inhos_no, output_dir, modules, icd10_ranges)
+    return api.save_patient_json_to_file(inhos_no, output_dir, mdc_org_cd, modules, icd10_ranges)
 
 def test_database_connection(db_config: Dict = None) -> Dict[str, Any]:
     """

@@ -2,8 +2,8 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from django.conf import settings
 from data_adapter.medical_api import MedicalAPI
+from data_adapter.source_db import get_source_db_config
 from .models import Case
 
 class PatientCaseView(APIView):
@@ -21,9 +21,7 @@ class PatientCaseView(APIView):
 
         try:
             # 在生产模式下，我们假设 LOCAL_DEV_MODE=False
-            source_db_config = settings.DATABASES['source_medical_db']
-            pymysql_config = {k: v for k, v in source_db_config.items() if k in ['host', 'user', 'password', 'database', 'port', 'charset']}
-            medical_api = MedicalAPI(db_config=pymysql_config)
+            medical_api = MedicalAPI(db_config=get_source_db_config())
             result = medical_api.get_patient_final_json_data(hospitalization_id)
 
             if result.get('success'):

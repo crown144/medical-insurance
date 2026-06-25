@@ -1,4 +1,5 @@
 from django.db import transaction
+from django.conf import settings
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -64,6 +65,9 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
         ]
         rule_ids = serializer.validated_data.get('rule_ids') or []
         execute = serializer.validated_data.get('execute', True)
+        mdc_org_cd = (
+            str(serializer.validated_data.get('mdc_org_cd') or getattr(settings, 'SOURCE_MDC_ORG_CD', '')).strip()
+        )
         task_name = serializer.validated_data.get('name') or (
             f'飞检自动审查-{batch.file_name}-批次{batch.id}'
         )
@@ -72,6 +76,7 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             task = Task.objects.create(
                 name=task_name[:255],
                 hospitalization_ids=hospitalization_ids,
+                mdc_org_cd=mdc_org_cd,
                 selected_schemas=selected_schemas,
                 summary=(
                     f'由飞检导入批次 {batch.id} 自动构建，'

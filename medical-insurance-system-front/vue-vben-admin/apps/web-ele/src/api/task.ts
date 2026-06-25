@@ -1,4 +1,8 @@
-import type { TaskListParams } from './model/taskModel';
+import type {
+  InhosSearchParams,
+  InhosSearchResponse,
+  TaskListParams,
+} from './model/taskModel';
 
 // src/api/task.ts
 import { baseRequestClient, requestClient } from '#/api/request';
@@ -45,8 +49,8 @@ export const getRuleListApi = async (params: any) => {
   return response.data?.results || response.data;
 };
 
-export const searchInhosApi = (params: any) => {
-  return requestClient.get<any>(Api.Inhos, { params });
+export const searchInhosApi = (params: InhosSearchParams) => {
+  return requestClient.get<InhosSearchResponse>(Api.Inhos, { params });
 };
 
 export const createTaskApi = (data: any) => {
