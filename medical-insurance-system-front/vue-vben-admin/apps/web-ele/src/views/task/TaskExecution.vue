@@ -7,6 +7,11 @@ import { useRoute, useRouter } from 'vue-router';
 
 import { Delete, Download, Search, View } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
+import {
+  DEMO_MODE,
+  DEMO_MODE_NOTICE_EN,
+  DEMO_MODE_NOTICE_ZH,
+} from '../../config/demo';
 
 // 👇👇👇 重点修改这里 👇👇👇
 // 1. 导入枚举 (Value)
@@ -256,6 +261,19 @@ onUnmounted(() => {
           <div class="title-sub">医保病例检测任务管理与执行</div>
         </div>
       </div>
+
+      <el-alert
+        v-if="DEMO_MODE"
+        type="info"
+        show-icon
+        :closable="false"
+        class="demo-alert"
+      >
+        <template #title>
+          <div>{{ DEMO_MODE_NOTICE_EN }}</div>
+          <div>{{ DEMO_MODE_NOTICE_ZH }}</div>
+        </template>
+      </el-alert>
 
       <div class="query-card">
         <div class="query-row">

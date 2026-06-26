@@ -144,6 +144,11 @@ def _database_error_status(exc):
 
 class InhosNumbersAPIView(APIView):
     def get(self, request):
+        if getattr(settings, 'DEMO_MODE', False):
+            return Response(
+                {'code': 403, 'message': 'Demo模式下不提供住院号检索'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         try:
             sql, params, filter_type, date_range, drug_filter = _build_query(request)
             inhos_numbers, truncated = _execute_query(sql, params)

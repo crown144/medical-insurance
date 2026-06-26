@@ -1,4 +1,5 @@
 import type {
+  DemoCaseItem,
   InhosSearchParams,
   InhosSearchResponse,
   TaskListParams,
@@ -8,6 +9,7 @@ import type {
 import { baseRequestClient, requestClient } from '#/api/request';
 
 enum Api {
+  Cases = '/cases/',
   Inhos = '/inhos-numbers/',
   Rule = '/rules/',
   Task = '/tasks/',
@@ -51,6 +53,11 @@ export const getRuleListApi = async (params: any) => {
 
 export const searchInhosApi = (params: InhosSearchParams) => {
   return requestClient.get<InhosSearchResponse>(Api.Inhos, { params });
+};
+
+export const getDemoCaseListApi = async () => {
+  const response = await baseRequestClient.get<DemoCaseItem[]>(Api.Cases);
+  return response.data || [];
 };
 
 export const createTaskApi = (data: any) => {

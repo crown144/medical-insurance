@@ -40,7 +40,7 @@ const form = reactive({
   ruleCode: '',
 });
 
-const typeOptions = ['超限定用药', '重复收费', '超标准收费', '过度医疗', '虚记费用'];
+const typeOptions = ['超限定用药', '重复收费', '超标准收费', '过度医疗', '超频次收费'];
 const statusOptions = [
   { label: '启用', value: 'true' },
   { label: '停用', value: 'false' },
@@ -51,7 +51,7 @@ const routeMap: Record<string, string> = {
   '超标准收费': 'RuleOverStandardFee',
   '重复收费': 'RuleDuplicateCharge',
   '过度医疗': 'RuleOverMedical',
-  '虚记费用': 'RuleFakeFee',
+  '超频次收费': 'RuleFakeFee',
 };
 
 const hasExecutableCode = (value?: string | null) => Boolean((value || '').trim());

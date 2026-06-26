@@ -17,6 +17,13 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
+def _env_flag(name, default=False):
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {'1', 'true', 'yes', 'on'}
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
@@ -82,6 +89,7 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'medical_audit_project.wsgi.application'
 LOCAL_DEV_MODE = True
+DEMO_MODE = _env_flag('DEMO_MODE', True)
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
@@ -187,18 +195,29 @@ import os as _os
 # 注意：base_url 取 OpenAI 兼容的「基址」(以 /v1 结尾)，SDK 会自动拼接
 # /chat/completions；不要把完整的 .../chat/completions 路径填进来。
 # 自部署模型通常不校验密钥，默认占位 'EMPTY' 即可，仍可由环境变量覆盖。
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
+# RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
+# RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
+#     'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
+# )
+
+# # 判断表头用的模型（自部署仅一个模型，默认与抽取模型一致）
+# RULE_IMPORT_LLM_MODEL_HEADER = _os.environ.get(
+#     'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen',
+# )
+# # 规则抽取用的模型
+# RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
+#     'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
+# )
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
-    'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
+    'RULE_IMPORT_LLM_BASE_URL', 'https://ws-a96ee3qy6pgzobqq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
 )
 
-# 判断表头用的模型（自部署仅一个模型，默认与抽取模型一致）
 RULE_IMPORT_LLM_MODEL_HEADER = _os.environ.get(
-    'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen',
+    'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen3.5-flash',
 )
-# 规则抽取用的模型
 RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
-    'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
+    'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen3.5-flash',
 )
 
 # 单次 LLM 请求超时(秒)
@@ -215,7 +234,7 @@ RULE_IMPORT_ALLOWED_EXTS = ('pdf', 'xlsx', 'xls')
 
 # LLM 分块行数：每次送入大模型抽取的表格行数。仅后端配置，前端不暴露。
 RULE_IMPORT_DEFAULT_CHUNK_SIZE = int(
-    _os.environ.get('RULE_IMPORT_DEFAULT_CHUNK_SIZE', '10'),
+    _os.environ.get('RULE_IMPORT_DEFAULT_CHUNK_SIZE', '20'),
 )
 
 # Celery 任务执行时间限制(秒)：抽取任务可能很长
@@ -240,7 +259,7 @@ RULE_COMPILE_LLM_BASE_URL = _os.environ.get(
         'AGENTA_BASE_URL',
         _os.environ.get(
             'DASHSCOPE_BASE_URL',
-            'http://127.0.0.1:9234/v1',
+            'https://ws-a96ee3qy6pgzobqq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
         ),
     ),
 )
@@ -248,7 +267,7 @@ RULE_COMPILE_LLM_MODEL = _os.environ.get(
     'RULE_COMPILE_LLM_MODEL',
     _os.environ.get(
         'AGENTA_MODEL',
-        _os.environ.get('DASHSCOPE_MODEL', 'qwen'),
+        _os.environ.get('DASHSCOPE_MODEL', 'qwen3.5-flash'),
     ),
 )
 RULE_COMPILE_LLM_MAX_TOKENS = int(

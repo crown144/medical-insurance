@@ -12,6 +12,7 @@ const knowledge: RouteRecordRaw = {
     title: '医保知识库',
     icon: 'mdi:database-outline',
     order: 40,
+    hideInMenu: true,
   },
   redirect: '/knowledge/manage/item',
   children: [

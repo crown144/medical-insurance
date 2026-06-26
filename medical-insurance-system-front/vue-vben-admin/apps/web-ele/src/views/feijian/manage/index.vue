@@ -434,7 +434,7 @@ onMounted(() => {
         <div class="title-bar"></div>
         <div class="title-text">
           <div class="title-main">飞检结果管理</div>
-          <div class="title-sub">飞检结果导入 → 自动审查构建 → 结果对齐 → 差异分析 → 结果管理</div>
+          <div class="title-sub">飞检结果导入 → 自动审查构建 → 结果对齐 </div>
         </div>
       </div>
 
@@ -1090,20 +1090,20 @@ onMounted(() => {
         </el-dialog>
 
         <!-- ==================== Tab 5: 差异分析 ==================== -->
-        <el-tab-pane label="差异分析" name="diff">
+        <!-- <el-tab-pane label="差异分析" name="diff">
           <div class="tab-header">
             <span class="tab-desc">自动识别飞检与系统审查之间的差异问题（需后端实现差异分析接口）</span>
           </div>
           <el-empty description="差异分析功能待后端实现" />
-        </el-tab-pane>
+        </el-tab-pane> -->
 
         <!-- ==================== Tab 6: 结果管理 ==================== -->
-        <el-tab-pane label="结果管理" name="manage">
+        <!-- <el-tab-pane label="结果管理" name="manage">
           <div class="tab-header">
             <span class="tab-desc">对飞检问题进行统一归档与追踪（需后端实现管理接口）</span>
           </div>
           <el-empty description="结果管理功能待后端实现" />
-        </el-tab-pane>
+        </el-tab-pane> -->
       </el-tabs>
     </div>
   </div>

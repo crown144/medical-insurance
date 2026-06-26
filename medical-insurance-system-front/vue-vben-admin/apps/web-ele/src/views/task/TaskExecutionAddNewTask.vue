@@ -1,5 +1,6 @@
 ﻿<script setup lang="ts">
 import type {
+  DemoCaseItem,
   InhosSearchParams,
   RuleItem,
 } from '../../api/model/taskModel';
@@ -18,6 +19,8 @@ import {
   ElIcon,
   ElInput,
   ElMessage,
+  ElOption,
+  ElSelect,
   ElTable,
   ElTableColumn,
   ElTag,
@@ -26,9 +29,11 @@ import {
 // API 和 组件 (保持您的引用路径)
 import {
   createTaskApi,
+  getDemoCaseListApi,
   getRuleListApi,
   searchInhosApi,
 } from '../../api/task';
+import { DEMO_MODE, DEMO_MODE_NOTICE_ZH } from '../../config/demo';
 // import RepeatChargingRuleSelector from '../../components/RepeatChargingRuleSelector.vue'; // 已废弃
 
 // --- 数据接口 ---
@@ -60,8 +65,10 @@ const caseInputRef = ref<InstanceType<typeof ElInput>>();
 
 const detectionSchemes = ref({
   overLimit: true,
-  repeatCharging: false,
   overStandard: false,
+  repeatCharging: false,
+  overFrequency: false,
+  overMedical: false,
 });
 const allRules = ref<RuleItem[]>([]);
 const isLoadingRules = ref(true);
@@ -71,6 +78,8 @@ const isLoadingInhos = ref(false);
 const inhosSearchResults = ref<string[]>([]);
 const inhosSearchWarning = ref('');
 const inhosSearchLimit = ref(0);
+const demoCases = ref<DemoCaseItem[]>([]);
+const isLoadingDemoCases = ref(false);
 
 /** 规则名提取：从描述中提取规则名 (复用自 RuleDetail.vue) */
 function extractRuleName(desc: string) {
@@ -112,6 +121,16 @@ const overStandardRules = ref<RuleItem[]>([]);
 const isLoadingOverStandardRules = ref(false);
 const overStandardRuleSearchQuery = ref('');
 const selectedOverStandardRuleIds = ref<number[]>([]);
+
+const overFrequencyRules = ref<RuleItem[]>([]);
+const isLoadingOverFrequencyRules = ref(false);
+const overFrequencyRuleSearchQuery = ref('');
+const selectedOverFrequencyRuleIds = ref<number[]>([]);
+
+const overMedicalRules = ref<RuleItem[]>([]);
+const isLoadingOverMedicalRules = ref(false);
+const overMedicalRuleSearchQuery = ref('');
+const selectedOverMedicalRuleIds = ref<number[]>([]);
 
 // --- 业务逻辑 ---
 
@@ -180,6 +199,68 @@ const handleOverStandardSelectionChange = (selectedRows: RuleItem[]) => {
   selectedOverStandardRuleIds.value = selectedRows.map((row) => row.id);
 };
 
+const loadOverFrequencyRules = async () => {
+  if (!detectionSchemes.value.overFrequency) {
+    overFrequencyRules.value = [];
+    return;
+  }
+  isLoadingOverFrequencyRules.value = true;
+  try {
+    const params = {
+      search: overFrequencyRuleSearchQuery.value.trim() || undefined,
+      type__in: '超频次收费',
+      paginate: 'false',
+    };
+    const res = await getRuleListApi(params);
+    overFrequencyRules.value = processRules(res);
+  } catch (error) {
+    console.error('加载超频次收费规则失败', error);
+  } finally {
+    isLoadingOverFrequencyRules.value = false;
+  }
+};
+
+watch(
+  [() => detectionSchemes.value.overFrequency, overFrequencyRuleSearchQuery],
+  loadOverFrequencyRules,
+  { deep: true },
+);
+
+const loadOverMedicalRules = async () => {
+  if (!detectionSchemes.value.overMedical) {
+    overMedicalRules.value = [];
+    return;
+  }
+  isLoadingOverMedicalRules.value = true;
+  try {
+    const params = {
+      search: overMedicalRuleSearchQuery.value.trim() || undefined,
+      type__in: '过度医疗',
+      paginate: 'false',
+    };
+    const res = await getRuleListApi(params);
+    overMedicalRules.value = processRules(res);
+  } catch (error) {
+    console.error('加载过度医疗规则失败', error);
+  } finally {
+    isLoadingOverMedicalRules.value = false;
+  }
+};
+
+watch(
+  [() => detectionSchemes.value.overMedical, overMedicalRuleSearchQuery],
+  loadOverMedicalRules,
+  { deep: true },
+);
+
+const handleOverFrequencySelectionChange = (selectedRows: RuleItem[]) => {
+  selectedOverFrequencyRuleIds.value = selectedRows.map((row) => row.id);
+};
+
+const handleOverMedicalSelectionChange = (selectedRows: RuleItem[]) => {
+  selectedOverMedicalRuleIds.value = selectedRows.map((row) => row.id);
+};
+
 const loadAllRules = async () => {
   if (!detectionSchemes.value.overLimit) {
     allRules.value = [];
@@ -204,6 +285,21 @@ const loadAllRules = async () => {
 
 watch([detectionSchemes, ruleSearchQuery], loadAllRules, { deep: true });
 onMounted(loadAllRules);
+
+const loadDemoCases = async () => {
+  if (!DEMO_MODE) return;
+  isLoadingDemoCases.value = true;
+  try {
+    demoCases.value = await getDemoCaseListApi();
+  } catch (error) {
+    console.error('加载模拟病例失败', error);
+    ElMessage.error('加载模拟病例失败');
+  } finally {
+    isLoadingDemoCases.value = false;
+  }
+};
+
+onMounted(loadDemoCases);
 
 const searchInhosNumbers = async () => {
   if (!form.value.mdc_org_cd.trim()) {
@@ -299,17 +395,24 @@ const handleRuleSelectionChange = (selectedRows: RuleItem[]) => {
   form.value.selected_rule_ids = selectedRows.map((row) => row.id);
 };
 
+const formatDemoCaseLabel = (item: DemoCaseItem) => {
+  return item.hospitalization_id;
+};
+
 const createTask = async () => {
   if (!form.value.name.trim()) return ElMessage.warning('请输入任务名称');
-  if (!form.value.mdc_org_cd.trim()) return ElMessage.warning('请输入医疗机构代码');
+  if (!DEMO_MODE && !form.value.mdc_org_cd.trim())
+    return ElMessage.warning('请输入医疗机构代码');
   if (form.value.hospitalization_ids.length === 0)
-    return ElMessage.warning('请输入至少一个住院号');
+    return ElMessage.warning(DEMO_MODE ? '请至少选择一个模拟病例' : '请输入至少一个住院号');
 
   // 简化的校验逻辑...
   const selectedSchemas: string[] = [];
   if (detectionSchemes.value.overLimit) selectedSchemas.push('超限定用药');
-  if (detectionSchemes.value.repeatCharging) selectedSchemas.push('重复收费');
   if (detectionSchemes.value.overStandard) selectedSchemas.push('超标准收费');
+  if (detectionSchemes.value.repeatCharging) selectedSchemas.push('重复收费');
+  if (detectionSchemes.value.overFrequency) selectedSchemas.push('超频次收费');
+  if (detectionSchemes.value.overMedical) selectedSchemas.push('过度医疗');
 
   if (selectedSchemas.length === 0)
     return ElMessage.warning('请至少选择一个检测方案');
@@ -319,17 +422,23 @@ const createTask = async () => {
     // 聚合所有选中的规则ID
     const allSelectedRuleIds = [
       ...(detectionSchemes.value.overLimit ? form.value.selected_rule_ids : []),
+      ...(detectionSchemes.value.overStandard
+        ? selectedOverStandardRuleIds.value
+        : []),
       ...(detectionSchemes.value.repeatCharging
         ? selectedRepeatRuleIds.value
         : []),
-      ...(detectionSchemes.value.overStandard
-        ? selectedOverStandardRuleIds.value
+      ...(detectionSchemes.value.overFrequency
+        ? selectedOverFrequencyRuleIds.value
+        : []),
+      ...(detectionSchemes.value.overMedical
+        ? selectedOverMedicalRuleIds.value
         : []),
     ];
 
     const payload = {
       name: form.value.name,
-      mdc_org_cd: form.value.mdc_org_cd.trim(),
+      mdc_org_cd: DEMO_MODE ? form.value.mdc_org_cd.trim() || '' : form.value.mdc_org_cd.trim(),
       hospitalization_ids: form.value.hospitalization_ids,
       rule_ids: allSelectedRuleIds, // 统一提交
       selectedSchemas,
@@ -371,6 +480,15 @@ const goBack = () => router.back();
         </div>
       </div>
 
+      <ElAlert
+        v-if="DEMO_MODE"
+        :title="DEMO_MODE_NOTICE_ZH"
+        type="info"
+        show-icon
+        :closable="false"
+        class="mb-4"
+      />
+
       <div class="section-title">1. 基础信息</div>
       <div class="query-card">
         <div class="form-row">
@@ -399,12 +517,37 @@ const goBack = () => router.back();
       </div>
 
       <div class="section-title">
-        2. 审核病例范围
+        2. {{ DEMO_MODE ? '模拟病例选择' : '审核病例范围' }}
         <span class="section-badge">已选 {{ form.hospitalization_ids.length }} 例</span>
       </div>
 
       <div class="query-card">
-        <div class="query-row">
+        <div v-if="DEMO_MODE" class="query-item demo-case-select">
+          <div class="query-label">
+            模拟病例选择 <span class="required">*</span>
+          </div>
+          <ElSelect
+            v-model="form.hospitalization_ids"
+            multiple
+            filterable
+            clearable
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="请选择一个或多个预置病例进行审核"
+            :loading="isLoadingDemoCases"
+            style="width: 100%"
+          >
+            <ElOption
+              v-for="item in demoCases"
+              :key="item.hospitalization_id"
+              :label="formatDemoCaseLabel(item)"
+              :value="item.hospitalization_id"
+            />
+          </ElSelect>
+          <div class="demo-case-hint">请选择一个或多个预置病例进行审核</div>
+        </div>
+
+        <div v-if="!DEMO_MODE" class="query-row">
           <div class="query-left">
             <div class="query-item">
               <div class="query-label">出院日期范围</div>
@@ -453,7 +596,7 @@ const goBack = () => router.back();
         </div>
 
         <ElAlert
-          v-if="inhosSearchWarning"
+          v-if="!DEMO_MODE && inhosSearchWarning"
           :title="inhosSearchWarning"
           type="warning"
           show-icon
@@ -461,7 +604,7 @@ const goBack = () => router.back();
           class="mb-3"
         />
 
-        <div v-if="inhosSearchResults.length > 0" class="result-area">
+        <div v-if="!DEMO_MODE && inhosSearchResults.length > 0" class="result-area">
           <div class="area-header">
             <span>
               查询结果 ({{ inhosSearchResults.length }})
@@ -494,7 +637,7 @@ const goBack = () => router.back();
 
         <div class="selected-area">
           <div class="area-header">
-            <span>已选病例池</span>
+            <span>{{ DEMO_MODE ? '已选模拟病例' : '已选病例池' }}</span>
             <ElButton
               v-if="form.hospitalization_ids.length > 0"
               type="danger"
@@ -517,7 +660,7 @@ const goBack = () => router.back();
               {{ tag }}
             </ElTag>
 
-            <div class="manual-input-wrapper">
+            <div v-if="!DEMO_MODE" class="manual-input-wrapper">
               <ElInput
                 v-if="caseInputVisible"
                 ref="caseInputRef"
@@ -557,13 +700,23 @@ const goBack = () => router.back();
               border
             />
             <ElCheckbox
+              v-model="detectionSchemes.overStandard"
+              label="超标准收费"
+              border
+            />
+            <ElCheckbox
               v-model="detectionSchemes.repeatCharging"
               label="重复收费"
               border
             />
             <ElCheckbox
-              v-model="detectionSchemes.overStandard"
-              label="超标准收费"
+              v-model="detectionSchemes.overFrequency"
+              label="超频次收费"
+              border
+            />
+            <ElCheckbox
+              v-model="detectionSchemes.overMedical"
+              label="过度医疗"
               border
             />
           </div>
@@ -730,6 +883,116 @@ const goBack = () => router.back();
             </div>
           </div>
         </ElCollapseTransition>
+
+        <ElCollapseTransition>
+          <div
+            v-if="detectionSchemes.overFrequency"
+            class="mt-4 border-t border-dashed border-gray-200 pt-4"
+          >
+            <div class="rule-header">
+              <span class="sub-title"
+                >配置“超频次收费”规则
+                <span class="ml-2 text-xs text-blue-500"
+                  >已选 {{ selectedOverFrequencyRuleIds.length }} 条</span
+                ></span
+              >
+              <ElInput
+                v-model="overFrequencyRuleSearchQuery"
+                placeholder="搜索规则名称..."
+                :prefix-icon="Search"
+                style="width: 250px"
+                size="small"
+              />
+            </div>
+
+            <div class="table-card mt-4">
+              <ElTable
+                :data="overFrequencyRules"
+                v-loading="isLoadingOverFrequencyRules"
+                height="350"
+                border
+                class="task-table"
+                @selection-change="handleOverFrequencySelectionChange"
+                row-key="id"
+              >
+                <ElTableColumn
+                  type="selection"
+                  width="50"
+                  align="center"
+                  :reserve-selection="true"
+                />
+                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
+                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                  <template #default="{ row }">
+                    <span class="font-bold text-gray-700">{{
+                      row.drug_name
+                    }}</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="description"
+                  label="规则描述"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+            </div>
+          </div>
+        </ElCollapseTransition>
+
+        <ElCollapseTransition>
+          <div
+            v-if="detectionSchemes.overMedical"
+            class="mt-4 border-t border-dashed border-gray-200 pt-4"
+          >
+            <div class="rule-header">
+              <span class="sub-title"
+                >配置“过度医疗”规则
+                <span class="ml-2 text-xs text-blue-500"
+                  >已选 {{ selectedOverMedicalRuleIds.length }} 条</span
+                ></span
+              >
+              <ElInput
+                v-model="overMedicalRuleSearchQuery"
+                placeholder="搜索规则名称..."
+                :prefix-icon="Search"
+                style="width: 250px"
+                size="small"
+              />
+            </div>
+
+            <div class="table-card mt-4">
+              <ElTable
+                :data="overMedicalRules"
+                v-loading="isLoadingOverMedicalRules"
+                height="350"
+                border
+                class="task-table"
+                @selection-change="handleOverMedicalSelectionChange"
+                row-key="id"
+              >
+                <ElTableColumn
+                  type="selection"
+                  width="50"
+                  align="center"
+                  :reserve-selection="true"
+                />
+                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
+                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                  <template #default="{ row }">
+                    <span class="font-bold text-gray-700">{{
+                      row.drug_name
+                    }}</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="description"
+                  label="规则描述"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+            </div>
+          </div>
+        </ElCollapseTransition>
       </div>
     </div>
   </div>
@@ -823,10 +1086,17 @@ const goBack = () => router.back();
   flex-direction: column;
   gap: 6px;
 }
+.demo-case-select {
+  width: 100%;
+}
 .query-label {
   font-size: 12px;
   color: #667085;
   font-weight: 500;
+}
+.demo-case-hint {
+  font-size: 12px;
+  color: #98a2b3;
 }
 .required {
   color: #f56c6c;

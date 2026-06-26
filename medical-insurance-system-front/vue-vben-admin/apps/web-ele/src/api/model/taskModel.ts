@@ -67,6 +67,11 @@ export interface InhosSearchResponse {
   warning?: string;
 }
 
+export interface DemoCaseItem {
+  hospitalization_id: string;
+  patient_name?: string;
+}
+
 // 👇👇👇 重点检查这里，必须有 export 👇👇👇
 export interface CreateTaskParams {
   name: string;

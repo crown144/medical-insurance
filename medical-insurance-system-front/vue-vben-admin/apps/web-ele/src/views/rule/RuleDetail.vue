@@ -27,7 +27,7 @@ type RuleType =
   | '超限定用药'
   | '重复收费'
   | '过度医疗'
-  | '虚记费用';
+  | '超频次收费';
 
 const props = defineProps<{ ruleType?: RuleType }>();
 const router = useRouter();
@@ -38,7 +38,7 @@ const ruleTypeToRouteName: Record<RuleType, string> = {
   超标准收费: 'RuleOverStandardFee',
   重复收费: 'RuleDuplicateCharge',
   过度医疗: 'RuleOverMedical',
-  虚记费用: 'RuleFakeFee',
+  超频次收费: 'RuleFakeFee',
 };
 
 /**
@@ -503,7 +503,7 @@ function formatParams(params: any) {
           <el-option label="重复收费" value="重复收费" />
           <el-option label="超标准收费" value="超标准收费" />
           <el-option label="过度医疗" value="过度医疗" />
-          <el-option label="虚记费用" value="虚记费用" />
+          <el-option label="超频次收费" value="超频次收费" />
         </el-select>
 
         <el-input
@@ -670,7 +670,7 @@ function formatParams(params: any) {
             <el-option label="重复收费" value="重复收费" />
             <el-option label="超标准收费" value="超标准收费" />
             <el-option label="过度医疗" value="过度医疗" />
-            <el-option label="虚记费用" value="虚记费用" />
+            <el-option label="超频次收费" value="超频次收费" />
           </el-select>
         </el-form-item>
 

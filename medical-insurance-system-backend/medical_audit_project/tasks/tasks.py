@@ -23,11 +23,45 @@ from engine.duplicate_billing import detect_duplicate_charges
 logger = logging.getLogger(__name__)
 
 
+def _demo_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
+    cache_key = f"{mdc_org_cd}:{hospitalization_id}" if mdc_org_cd else hospitalization_id
+    cache_keys = [cache_key]
+    if cache_key != hospitalization_id:
+        cache_keys.append(hospitalization_id)
+
+    for current_key in cache_keys:
+        try:
+            case = Case.objects.get(pk=current_key)
+            logger.info(f"Demo: hit cases_case for {hospitalization_id}")
+            return case.json_content
+        except Case.DoesNotExist:
+            continue
+
+    demo_case = os.path.join(settings.BASE_DIR, "mock_patient_data", f"{hospitalization_id}.json")
+    if os.path.exists(demo_case):
+        with open(demo_case, 'r', encoding='utf-8') as f:
+            logger.info(f"Demo: loaded mock_patient_data for {hospitalization_id}")
+            patient_json = json.load(f)
+            try:
+                Case.objects.update_or_create(
+                    hospitalization_id=cache_key,
+                    defaults={'json_content': patient_json},
+                )
+            except Exception:
+                pass
+            return patient_json
+
+    raise FileNotFoundError("Demo环境未找到病例数据")
+
+
 def get_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
     """
     数据获取辅助函数，增加了缓存逻辑，并通过“猴子补丁”注入配置。
     """
     # --- 1. 尝试从缓存读取 ---
+    if getattr(settings, 'DEMO_MODE', False):
+        return _demo_patient_data(hospitalization_id, mdc_org_cd)
+
     cache_key = f"{mdc_org_cd}:{hospitalization_id}" if mdc_org_cd else hospitalization_id
     try:
         case = Case.objects.get(pk=cache_key)
