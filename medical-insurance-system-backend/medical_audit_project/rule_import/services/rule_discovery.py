@@ -36,6 +36,9 @@ def extract_json_from_llm(text):
     text = text.strip()
     text = re.sub(r"```json", "", text)
     text = re.sub(r"```", "", text)
+    if '</think>' in text:
+        text=text.split('</think>')[-1].strip()
+    logger.info(text)
     match = re.search(r"\[\s*.*\s*\]", text, re.S)
     if match:
         try:
@@ -111,7 +114,7 @@ def build_prompt(headers, rows):
     ----------------------------------
     如果不存在规则：返回 []
 
-    如果存在规则，返回格式：
+    如果存在规则，返回格式：(只返回以下内容，不输出思考过程)
     [
     {{
         "rule_type":"",
