@@ -7,7 +7,7 @@ const result: RouteRecordRaw = {
   name: 'ResultCenter',
   component: BasicLayout,
   meta: {
-    title: '结果中心',
+    title: 'Audit Results',
     icon: 'mdi:file-document-outline',
     order: 30,
   },
@@ -19,7 +19,7 @@ const result: RouteRecordRaw = {
       name: 'ResultTaskOverview',
       component: () => import('#/views/result/TaskResultOverview.vue'),
       meta: {
-        title: '任务结果总览',
+        title: 'Task Results Overview',
         icon: 'mdi:view-dashboard-variant-outline',
       },
     },
@@ -30,7 +30,7 @@ const result: RouteRecordRaw = {
       name: 'ResultViolationQuery',
       component: () => import('#/views/result/ViolationResultQuery.vue'),
       meta: {
-        title: '全量违规查询',
+        title: 'Violation Query',
         icon: 'mdi:database-search-outline',
       },
     },
@@ -41,7 +41,7 @@ const result: RouteRecordRaw = {
       name: 'ResultTaskItems', // 🚨 记住这个名字，跳转要用
       component: () => import('#/views/result/SpecificTaskResult.vue'),
       meta: {
-        title: '任务明细清单',
+        title: 'Task Result Details',
         icon: 'mdi:format-list-bulleted-type',
         // hideInMenu: true, // 您注释掉了，说明想在菜单显示，没问题
         activeMenu: '/task/manage/execution', // 建议加上：让左侧菜单保持高亮在任务执行或结果中心
@@ -56,7 +56,7 @@ const result: RouteRecordRaw = {
       // 这里指向 result 目录下的文件
       component: () => import('#/views/result/AuditDetail.vue'),
       meta: {
-        title: '结果审计详情',
+        title: 'Audit Result Detail',
         icon: 'mdi:file-eye-outline',
         hideInMenu: true, // 这个通常需要隐藏，因为必须带参数才能看
         activeMenu: '/task/manage/execution',

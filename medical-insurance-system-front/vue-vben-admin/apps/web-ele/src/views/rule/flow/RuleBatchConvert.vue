@@ -20,13 +20,10 @@ import {
   uploadRuleImportApi,
 } from '../../../api/ruleImport';
 
-// ==================== 常量 ====================
-
 const ALLOWED_EXTS = ['pdf', 'xlsx', 'xls'];
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 与后端 RULE_IMPORT_MAX_FILE_SIZE 一致
+const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const TERMINAL: RuleImportStatus[] = ['success', 'failed', 'canceled'];
 
-// 规则类型枚举 -> 中文标签（与后端 importer.RULE_TYPE_MAP 对齐）
 const RULE_TYPE_LABELS: Record<string, string> = {
   DRUG_RESTRICTION: '超限定用药',
   FREQUENCY_LIMIT: '超频次收费',
@@ -41,14 +38,10 @@ const RULE_TYPE_OPTIONS = Object.entries(RULE_TYPE_LABELS).map(
   ([value, label]) => ({ value, label }),
 );
 
-// ==================== 页面状态 ====================
-
 const activeTab = ref<'history' | 'upload'>('upload');
 
-// ---- 上传表单 ----
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const selectedFile = ref<File | null>(null);
-// 数量类参数留空 = 不限数量；LLM 分块行数由后端配置，前端不提供设置
 const form = reactive({
   task_name: '',
   max_pdf_pages: undefined as number | undefined,
@@ -57,12 +50,10 @@ const form = reactive({
 });
 const submitting = ref(false);
 
-// ---- 当前任务 / 轮询 ----
 const currentTask = ref<null | RuleImportTask>(null);
 const polling = ref(false);
 let pollTimer: null | ReturnType<typeof setInterval> = null;
 
-// ---- 抽取结果 ----
 const rules = ref<ExtractedRule[]>([]);
 const rulesLoading = ref(false);
 const rulesTotal = ref(0);
@@ -72,14 +63,11 @@ const ruleTypeFilter = ref('');
 const selectedRules = ref<ExtractedRule[]>([]);
 const importing = ref(false);
 
-// ---- 历史任务 ----
 const historyList = ref<RuleImportTask[]>([]);
 const historyLoading = ref(false);
 const historyTotal = ref(0);
 const historyPage = ref(1);
 const historyPageSize = ref(10);
-
-// ==================== 工具函数 ====================
 
 function formatFileSize(bytes: number) {
   if (!bytes) return '0 B';
@@ -101,14 +89,12 @@ function getStatusType(status: string) {
 }
 
 function ruleTypeLabel(t: string) {
-  return RULE_TYPE_LABELS[t] || t || '未分类';
+  return RULE_TYPE_LABELS[t] || t || 'Uncategorized';
 }
 
 function isRunning(task: null | RuleImportTask) {
   return !!task && !TERMINAL.includes(task.status);
 }
-
-// ==================== 轮询 ====================
 
 function stopPolling() {
   if (pollTimer) {
@@ -126,16 +112,16 @@ async function pollOnce() {
     if (TERMINAL.includes(task.status)) {
       stopPolling();
       if (task.status === 'success') {
-        ElMessage.success(`转换完成，共抽取 ${task.rule_count} 条规则`);
+        ElMessage.success(`Conversion completed. ${task.rule_count} rules extracted.`);
         rulesPage.value = 1;
         await loadRules();
       } else if (task.status === 'failed') {
-        ElMessage.error('转换失败，请查看错误详情');
+        ElMessage.error('Conversion failed. Please review the error details.');
       }
       await loadHistory();
     }
   } catch {
-    // 单次轮询失败忽略，下次继续
+    // Ignore one failed poll cycle and continue polling next time.
   }
 }
 
@@ -144,8 +130,6 @@ function startPolling() {
   polling.value = true;
   pollTimer = setInterval(pollOnce, 2000);
 }
-
-// ==================== 上传与提交 ====================
 
 function triggerFileSelect() {
   fileInputRef.value?.click();
@@ -159,12 +143,14 @@ function onFileChange(e: Event) {
     ? file.name.split('.').pop()!.toLowerCase()
     : '';
   if (!ALLOWED_EXTS.includes(ext)) {
-    ElMessage.error(`不支持的文件类型，请上传 ${ALLOWED_EXTS.join(' / ')} 文件`);
+    ElMessage.error(
+      `Unsupported file type. Please upload a ${ALLOWED_EXTS.join(' / ')} file.`,
+    );
     input.value = '';
     return;
   }
   if (file.size > MAX_FILE_SIZE) {
-    ElMessage.error('文件过大，最大允许 50MB');
+    ElMessage.error('File is too large. Maximum size is 50 MB.');
     input.value = '';
     return;
   }
@@ -174,20 +160,25 @@ function onFileChange(e: Event) {
 
 function validateForm(): boolean {
   if (!selectedFile.value) {
-    ElMessage.warning('请先选择要转换的文件');
+    ElMessage.warning('Please select a file to convert first.');
     return false;
   }
-  // 数量类参数可留空(不限)，若填写则需为正整数
   if (form.max_pdf_pages != null && form.max_pdf_pages < 1) {
-    ElMessage.warning('PDF最大页数需大于 0，或留空表示不限');
+    ElMessage.warning(
+      'Maximum PDF pages must be greater than 0, or left blank for no limit.',
+    );
     return false;
   }
   if (form.max_rows_per_table != null && form.max_rows_per_table < 1) {
-    ElMessage.warning('每表最大行数需大于 0，或留空表示不限');
+    ElMessage.warning(
+      'Maximum rows per table must be greater than 0, or left blank for no limit.',
+    );
     return false;
   }
   if (form.max_tables != null && form.max_tables < 1) {
-    ElMessage.warning('最大处理表数需大于 0，或留空表示不限');
+    ElMessage.warning(
+      'Maximum number of tables must be greater than 0, or left blank for no limit.',
+    );
     return false;
   }
   return true;
@@ -207,12 +198,14 @@ async function handleSubmit() {
     rules.value = [];
     rulesTotal.value = 0;
     selectedRules.value = [];
-    ElMessage.success('已提交转换任务，正在后台执行...');
+    ElMessage.success(
+      'Conversion task submitted and is now running in the background.',
+    );
     startPolling();
     await loadHistory();
   } catch (error: any) {
     const msg =
-      error?.response?.data?.error || error?.message || '提交失败';
+      error?.response?.data?.error || error?.message || 'Submission failed';
     ElMessage.error(msg);
   } finally {
     submitting.value = false;
@@ -233,8 +226,6 @@ function resetUpload() {
   if (fileInputRef.value) fileInputRef.value.value = '';
 }
 
-// ==================== 抽取结果 ====================
-
 async function loadRules() {
   if (!currentTask.value) return;
   rulesLoading.value = true;
@@ -248,7 +239,10 @@ async function loadRules() {
     rules.value = res.results;
     rulesTotal.value = res.count;
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '加载结果失败';
+    const msg =
+      error?.response?.data?.error ||
+      error?.message ||
+      'Failed to load extraction results';
     ElMessage.error(msg);
   } finally {
     rulesLoading.value = false;
@@ -262,7 +256,9 @@ function onSelectionChange(rows: ExtractedRule[]) {
 async function handleConfirmImport(selectAll: boolean) {
   if (!currentTask.value) return;
   if (!selectAll && selectedRules.value.length === 0) {
-    ElMessage.warning('请先勾选要入库的规则，或选择“全部入库”');
+    ElMessage.warning(
+      'Please select the rules to import, or choose "Import All".',
+    );
     return;
   }
   importing.value = true;
@@ -271,12 +267,14 @@ async function handleConfirmImport(selectAll: boolean) {
       ? { select_all: true }
       : { rule_ids: selectedRules.value.map((r) => r.id) };
     const res = await confirmRuleImportApi(currentTask.value.id, payload);
-    ElMessage.success(`入库完成：成功 ${res.imported} 条，跳过 ${res.skipped} 条`);
+    ElMessage.success(
+      `Import completed: ${res.imported} imported, ${res.skipped} skipped.`,
+    );
     currentTask.value = res.task;
     await loadRules();
     await loadHistory();
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '入库失败';
+    const msg = error?.response?.data?.error || error?.message || 'Import failed';
     ElMessage.error(msg);
   } finally {
     importing.value = false;
@@ -289,18 +287,16 @@ async function handleDownload(taskId: number) {
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `规则抽取_任务${taskId}.json`;
+    a.download = `rule-extraction-task-${taskId}.json`;
     document.body.append(a);
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '下载失败';
+    const msg = error?.response?.data?.error || error?.message || 'Download failed';
     ElMessage.error(msg);
   }
 }
-
-// ==================== 历史任务 ====================
 
 async function loadHistory() {
   historyLoading.value = true;
@@ -312,7 +308,8 @@ async function loadHistory() {
     historyList.value = res.results;
     historyTotal.value = res.count;
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '加载历史失败';
+    const msg =
+      error?.response?.data?.error || error?.message || 'Failed to load history';
     ElMessage.error(msg);
   } finally {
     historyLoading.value = false;
@@ -338,33 +335,34 @@ async function viewHistoryTask(task: RuleImportTask) {
 
 async function handleCancel(task: RuleImportTask) {
   try {
-    await ElMessageBox.confirm(`确认取消任务「${task.task_name}」吗？`, '提示', {
-      type: 'warning',
-    });
+    await ElMessageBox.confirm(
+      `Cancel task "${task.task_name}"?`,
+      'Confirmation',
+      { type: 'warning' },
+    );
   } catch {
     return;
   }
   try {
     await cancelRuleImportApi(task.id);
-    ElMessage.success('任务已取消');
+    ElMessage.success('Task canceled.');
     if (currentTask.value?.id === task.id) {
       stopPolling();
       await pollOnce();
     }
     await loadHistory();
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '取消失败';
+    const msg =
+      error?.response?.data?.error ||
+      error?.message ||
+      'Cancellation failed';
     ElMessage.error(msg);
   }
 }
 
-// ==================== 计算属性 ====================
-
 const canImport = computed(
   () => currentTask.value?.status === 'success' && rulesTotal.value > 0,
 );
-
-// ==================== 生命周期 ====================
 
 onMounted(() => {
   loadHistory();
@@ -378,29 +376,29 @@ onUnmounted(() => {
 <template>
   <div class="page-wrap">
     <div class="content-card">
-      <!-- 标题 -->
       <div class="page-title">
         <div class="title-bar"></div>
         <div>
-          <div class="title-main">规则批量导入转换</div>
+          <div class="title-main">Rule Discovery</div>
           <div class="title-sub">
-            上传药品 / 收费目录文件（PDF / Excel），由算法自动抽取医保审核规则，确认后写入规则库
+            Upload drug or billing catalog files (PDF or Excel). The system
+            automatically extracts audit rules for review before writing them
+            into the rule library.
           </div>
         </div>
       </div>
 
       <el-tabs v-model="activeTab" type="border-card" class="main-tabs">
-        <!-- ==================== Tab 1: 上传转换 ==================== -->
-        <el-tab-pane label="上传转换" name="upload">
-          <!-- 上传表单 -->
+        <el-tab-pane label="Upload & Convert" name="upload">
           <div class="upload-panel">
             <div class="upload-box" @click="triggerFileSelect">
               <el-icon class="upload-icon"><UploadFilled /></el-icon>
               <div v-if="selectedFile" class="upload-file">
-                {{ selectedFile.name }}（{{ formatFileSize(selectedFile.size) }}）
+                {{ selectedFile.name }} ({{ formatFileSize(selectedFile.size) }})
               </div>
               <div v-else class="upload-hint">
-                点击选择文件，支持 .pdf / .xlsx / .xls，最大 50MB
+                Click to select a file. Supported formats: .pdf / .xlsx / .xls,
+                up to 50 MB.
               </div>
               <input
                 ref="fileInputRef"
@@ -411,66 +409,65 @@ onUnmounted(() => {
               />
             </div>
 
-            <el-form label-width="120px" class="param-form">
+            <el-form label-width="150px" class="param-form">
               <div class="form-grid">
-                <el-form-item label="任务名称">
+                <el-form-item label="Task Name">
                   <el-input
                     v-model="form.task_name"
-                    placeholder="留空则使用文件名"
+                    placeholder="Leave blank to use the file name"
                     maxlength="255"
                   />
                 </el-form-item>
-                <el-form-item label="PDF最大页数">
+                <el-form-item label="Max PDF Pages">
                   <el-input-number
                     v-model="form.max_pdf_pages"
                     :min="1"
-                    placeholder="留空=不限"
+                    placeholder="Blank = no limit"
                     controls-position="right"
                     style="width: 100%"
                   />
                 </el-form-item>
-                <el-form-item label="每表最大行数">
+                <el-form-item label="Max Rows per Table">
                   <el-input-number
                     v-model="form.max_rows_per_table"
                     :min="1"
-                    placeholder="留空=不限"
+                    placeholder="Blank = no limit"
                     controls-position="right"
                     style="width: 100%"
                   />
                 </el-form-item>
-                <el-form-item label="最大处理表数">
+                <el-form-item label="Max Tables to Process">
                   <el-input-number
                     v-model="form.max_tables"
                     :min="1"
-                    placeholder="留空=不限"
+                    placeholder="Blank = no limit"
                     controls-position="right"
                     style="width: 100%"
                   />
                 </el-form-item>
               </div>
               <div class="form-actions">
-                <el-button @click="resetUpload">重置</el-button>
+                <el-button @click="resetUpload">Reset</el-button>
                 <el-button
                   type="primary"
                   :loading="submitting"
                   :disabled="polling"
                   @click="handleSubmit"
                 >
-                  {{ submitting ? '提交中...' : '开始转换' }}
+                  {{ submitting ? 'Submitting...' : 'Start Conversion' }}
                 </el-button>
               </div>
             </el-form>
           </div>
 
-          <!-- 当前任务状态 -->
           <div v-if="currentTask" class="task-status-panel">
-            <div class="list-title">当前任务</div>
+            <div class="list-title">Current Task</div>
             <div class="status-row">
               <span class="status-name">{{ currentTask.task_name }}</span>
               <el-tag :type="getStatusType(currentTask.status)" size="small">
                 {{ currentTask.status_label }}
               </el-tag>
-              <span v-if="polling" class="muted">（执行中，自动刷新…）</span>
+              <span v-if="polling" class="muted">(running, auto-refreshing...)</span>
             </div>
             <el-progress
               :percentage="currentTask.progress"
@@ -484,9 +481,9 @@ onUnmounted(() => {
               class="mt-2"
             />
             <div class="status-meta">
-              <span>解析表数：{{ currentTask.table_count }}</span>
-              <span>抽取规则：{{ currentTask.rule_count }}</span>
-              <span>已入库：{{ currentTask.imported_count }}</span>
+              <span>Parsed Tables: {{ currentTask.table_count }}</span>
+              <span>Extracted Rules: {{ currentTask.rule_count }}</span>
+              <span>Imported: {{ currentTask.imported_count }}</span>
             </div>
             <el-alert
               v-if="currentTask.status === 'failed' && currentTask.error_detail"
@@ -498,18 +495,25 @@ onUnmounted(() => {
             />
           </div>
 
-          <!-- 抽取结果 -->
-          <div v-if="currentTask && currentTask.status === 'success'" class="result-panel">
+          <div
+            v-if="currentTask && currentTask.status === 'success'"
+            class="result-panel"
+          >
             <div class="result-header">
-              <div class="list-title">抽取规则结果</div>
+              <div class="list-title">Extracted Rules</div>
               <div class="result-actions">
                 <el-select
                   v-model="ruleTypeFilter"
-                  placeholder="全部类型"
+                  placeholder="All Types"
                   clearable
                   size="small"
                   style="width: 150px"
-                  @change="() => { rulesPage = 1; loadRules(); }"
+                  @change="
+                    () => {
+                      rulesPage = 1;
+                      loadRules();
+                    }
+                  "
                 >
                   <el-option
                     v-for="opt in RULE_TYPE_OPTIONS"
@@ -523,7 +527,7 @@ onUnmounted(() => {
                   :icon="Download"
                   @click="handleDownload(currentTask.id)"
                 >
-                  下载JSON
+                  Download JSON
                 </el-button>
                 <el-button
                   size="small"
@@ -531,7 +535,7 @@ onUnmounted(() => {
                   :disabled="!canImport || selectedRules.length === 0"
                   @click="handleConfirmImport(false)"
                 >
-                  入库选中（{{ selectedRules.length }}）
+                  Import Selected ({{ selectedRules.length }})
                 </el-button>
                 <el-button
                   size="small"
@@ -540,7 +544,7 @@ onUnmounted(() => {
                   :disabled="!canImport"
                   @click="handleConfirmImport(true)"
                 >
-                  全部入库
+                  Import All
                 </el-button>
               </div>
             </div>
@@ -555,42 +559,42 @@ onUnmounted(() => {
                 @selection-change="onSelectionChange"
               >
                 <el-table-column type="selection" width="44" />
-                <el-table-column prop="seq" label="序号" width="64" align="center" />
-                <el-table-column label="规则类型" width="120">
+                <el-table-column prop="seq" label="No." width="64" align="center" />
+                <el-table-column label="Rule Type" width="120">
                   <template #default="{ row }">
                     <el-tag size="small">{{ ruleTypeLabel(row.rule_type) }}</el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column
                   prop="constrained_object"
-                  label="约束对象"
+                  label="Target Object"
                   min-width="160"
                   show-overflow-tooltip
                 />
                 <el-table-column
                   prop="constraint_value"
-                  label="限制内容"
+                  label="Constraint"
                   min-width="260"
                   show-overflow-tooltip
                 />
-                <el-table-column label="来源" width="160" show-overflow-tooltip>
+                <el-table-column label="Source" width="160" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.source?.file_name || '-' }}
-                    <span v-if="row.source?.page">（第{{ row.source.page }}页）</span>
+                    <span v-if="row.source?.page">(Page {{ row.source.page }})</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="入库" width="80" align="center">
+                <el-table-column label="Imported" width="80" align="center">
                   <template #default="{ row }">
                     <el-tag
                       :type="row.is_imported ? 'success' : 'info'"
                       size="small"
                     >
-                      {{ row.is_imported ? '已入库' : '未入库' }}
+                      {{ row.is_imported ? 'Yes' : 'No' }}
                     </el-tag>
                   </template>
                 </el-table-column>
                 <template #empty>
-                  <el-empty description="暂无抽取规则" />
+                  <el-empty description="No extracted rules yet" />
                 </template>
               </el-table>
               <div class="pager">
@@ -609,19 +613,22 @@ onUnmounted(() => {
             </div>
           </div>
 
-          <!-- 初始空状态 -->
           <el-empty
             v-if="!currentTask"
-            description="请上传文件并开始转换"
+            description="Upload a file and start the conversion process"
             class="mt-3"
           />
         </el-tab-pane>
 
-        <!-- ==================== Tab 2: 转换历史 ==================== -->
-        <el-tab-pane label="转换历史" name="history">
+        <el-tab-pane label="Conversion History" name="history">
           <div class="tab-header">
-            <div class="tab-desc">查看历史转换任务，可回看结果、下载或取消执行中的任务</div>
-            <el-button :icon="Refresh" size="small" @click="loadHistory">刷新</el-button>
+            <div class="tab-desc">
+              Review previous conversion tasks, revisit results, download outputs,
+              or cancel running jobs.
+            </div>
+            <el-button :icon="Refresh" size="small" @click="loadHistory">
+              Refresh
+            </el-button>
           </div>
 
           <div class="table-card">
@@ -632,29 +639,54 @@ onUnmounted(() => {
               style="width: 100%"
             >
               <el-table-column prop="id" label="ID" width="64" align="center" />
-              <el-table-column prop="task_name" label="任务名称" min-width="180" show-overflow-tooltip />
-              <el-table-column prop="file_name" label="文件" min-width="160" show-overflow-tooltip />
-              <el-table-column label="状态" width="100" align="center">
+              <el-table-column
+                prop="task_name"
+                label="Task Name"
+                min-width="180"
+                show-overflow-tooltip
+              />
+              <el-table-column
+                prop="file_name"
+                label="File"
+                min-width="160"
+                show-overflow-tooltip
+              />
+              <el-table-column label="Status" width="100" align="center">
                 <template #default="{ row }">
                   <el-tag :type="getStatusType(row.status)" size="small">
                     {{ row.status_label }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column label="进度" width="80" align="center">
+              <el-table-column label="Progress" width="80" align="center">
                 <template #default="{ row }">{{ row.progress }}%</template>
               </el-table-column>
-              <el-table-column prop="rule_count" label="规则数" width="80" align="center" />
-              <el-table-column prop="imported_count" label="已入库" width="80" align="center" />
-              <el-table-column prop="created_at" label="创建时间" width="170">
+              <el-table-column
+                prop="rule_count"
+                label="Rules"
+                width="80"
+                align="center"
+              />
+              <el-table-column
+                prop="imported_count"
+                label="Imported"
+                width="80"
+                align="center"
+              />
+              <el-table-column prop="created_at" label="Created At" width="170">
                 <template #default="{ row }">
                   {{ new Date(row.created_at).toLocaleString() }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="180" fixed="right" align="center">
+              <el-table-column
+                label="Actions"
+                width="180"
+                fixed="right"
+                align="center"
+              >
                 <template #default="{ row }">
                   <el-button type="primary" link @click="viewHistoryTask(row)">
-                    查看
+                    View
                   </el-button>
                   <el-button
                     v-if="row.status === 'success'"
@@ -662,7 +694,7 @@ onUnmounted(() => {
                     link
                     @click="handleDownload(row.id)"
                   >
-                    下载
+                    Download
                   </el-button>
                   <el-button
                     v-if="!['success', 'failed', 'canceled'].includes(row.status)"
@@ -670,12 +702,12 @@ onUnmounted(() => {
                     link
                     @click="handleCancel(row)"
                   >
-                    取消
+                    Cancel
                   </el-button>
                 </template>
               </el-table-column>
               <template #empty>
-                <el-empty description="暂无转换任务" />
+                <el-empty description="No conversion tasks yet" />
               </template>
             </el-table>
             <div class="pager">
@@ -744,7 +776,6 @@ onUnmounted(() => {
   padding: 18px 16px 0;
 }
 
-/* 上传区 */
 .upload-panel {
   display: flex;
   gap: 20px;
@@ -800,7 +831,6 @@ onUnmounted(() => {
   margin-top: 8px;
 }
 
-/* 任务状态 */
 .task-status-panel {
   padding: 14px 16px;
   margin-top: 18px;
@@ -826,7 +856,6 @@ onUnmounted(() => {
   color: #667085;
 }
 
-/* 结果区 */
 .result-panel {
   margin-top: 18px;
 }
@@ -859,7 +888,6 @@ onUnmounted(() => {
   padding: 10px 4px 2px;
 }
 
-/* tab header */
 .tab-header {
   display: flex;
   align-items: center;

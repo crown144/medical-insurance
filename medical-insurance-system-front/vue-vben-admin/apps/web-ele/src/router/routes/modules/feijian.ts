@@ -7,7 +7,7 @@ const feijian: RouteRecordRaw = {
   name: 'FeiJian',
   component: BasicLayout,
   meta: {
-    title: '飞检结果管理',
+    title: 'Inspection Comparison',
     icon: 'mdi:file-search-outline',
     order: 30,
   },
@@ -18,7 +18,7 @@ const feijian: RouteRecordRaw = {
       name: 'FeiJianManage',
       component: () => import('#/views/feijian/manage/index.vue'),
       meta: {
-        title: '飞检结果处理',
+        title: 'Inspection Result Alignment',
         icon: 'mdi:clipboard-check-outline',
         keepAlive: false,
       },

@@ -9,7 +9,7 @@ const knowledge: RouteRecordRaw = {
   name: 'KnowledgeCenter',
   component: BasicLayout,
   meta: {
-    title: '医保知识库',
+    title: 'Medical Knowledge Base',
     icon: 'mdi:database-outline',
     order: 40,
     hideInMenu: true,
@@ -20,32 +20,32 @@ const knowledge: RouteRecordRaw = {
       path: 'manage',
       name: 'KnowledgeManage',
       component: ParentView,
-      meta: { title: '知识库管理', icon: 'mdi:folder-cog-outline' },
+      meta: { title: 'Knowledge Base Management', icon: 'mdi:folder-cog-outline' },
       redirect: '/knowledge/manage/item',
       children: [
         {
           path: 'item',
           name: 'KnowledgeItem',
           component: () => import('#/views/knowledge/ItemKnowledge.vue'),
-          meta: { title: '项目内涵知识库', icon: 'mdi:shape-outline' },
+          meta: { title: 'Item Knowledge Base', icon: 'mdi:shape-outline' },
         },
         {
           path: 'drug',
           name: 'KnowledgeDrug',
           component: () => import('#/views/knowledge/DrugKnowledge.vue'),
-          meta: { title: '医保药品知识库', icon: 'mdi:pill' },
+          meta: { title: 'Drug Knowledge Base', icon: 'mdi:pill' },
         },
         {
           path: 'vector',
           name: 'KnowledgeVector',
           component: () => import('#/views/knowledge/VectorKnowledge.vue'),
-          meta: { title: '医保知识向量库', icon: 'mdi:vector-arrange-above' },
+          meta: { title: 'Knowledge Vector Store', icon: 'mdi:vector-arrange-above' },
         },
         {
           path: 'code',
           name: 'KnowledgeCodeTable',
           component: ParentView,
-          meta: { title: '码表库', icon: 'mdi:code-tags' },
+          meta: { title: 'Code Tables', icon: 'mdi:code-tags' },
           redirect: '/knowledge/manage/code/operation',
           children: [
             {
@@ -53,13 +53,13 @@ const knowledge: RouteRecordRaw = {
               name: 'OperationCode',
               component: () =>
                 import('#/views/knowledge/code/OperationCode.vue'),
-              meta: { title: '手术与操作编码库', icon: 'mdi:knife' },
+              meta: { title: 'Procedure and Operation Codes', icon: 'mdi:knife' },
             },
             {
               path: 'icd',
               name: 'ICDCode',
               component: () => import('#/views/knowledge/code/ICDCode.vue'),
-              meta: { title: 'ICD编码库', icon: 'mdi:book-medical' },
+              meta: { title: 'ICD Code Library', icon: 'mdi:book-medical' },
             },
           ],
         },

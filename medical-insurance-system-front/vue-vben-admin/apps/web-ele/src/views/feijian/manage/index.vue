@@ -14,6 +14,7 @@ import { useRouter } from 'vue-router';
 
 import { DataAnalysis, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { getRuleTypeLabel } from '../../../config/rule-type';
 
 import {
   alignFeiJianResultsApi,
@@ -85,9 +86,9 @@ const auditSelectedSchemas = ref<string[]>([
 ]);
 const auditBuildResult = ref<any | null>(null);
 const auditSchemaOptions = [
-  { label: '超限定用药', value: '超限定用药' },
-  { label: '重复收费', value: '重复收费' },
-  { label: '超标准收费', value: '超标准收费' },
+  { label: 'Restricted Medication', value: '超限定用药' },
+  { label: 'Duplicate Charge', value: '重复收费' },
+  { label: 'Over-standard Charge', value: '超标准收费' },
 ];
 const successfulBatches = computed(() =>
   importBatches.value.filter((batch) => batch.status === 'success'),
@@ -137,9 +138,9 @@ function getConfidenceColor(confidence: number) {
 
 function getMethodLabel(method: string) {
   const map: Record<string, string> = {
-    'regex': '正则匹配',
-    'regex+data': '正则+数据验证',
-    'llm': 'LLM辅助',
+    'regex': 'Regex Matching',
+    'regex+data': 'Regex + Data Validation',
+    'llm': 'LLM-assisted',
   };
   return map[method] || method;
 }
@@ -156,16 +157,16 @@ function getMatchStatusType(status: string) {
 
 // 目标字段标签映射
 const fieldLabels: Record<string, string> = {
-  hospitalization_no: '住院号',
-  patient_name: '患者姓名',
-  hospital_name: '医疗机构',
-  admission_date: '入院日期',
-  discharge_date: '出院日期',
-  issue_category: '问题类别',
-  issue_description: '问题描述',
-  involved_amount: '涉及金额',
-  audit_org: '飞检机构',
-  audit_date: '飞检日期',
+  hospitalization_no: 'Hospitalization ID',
+  patient_name: 'Patient Name',
+  hospital_name: 'Medical Institution',
+  admission_date: 'Admission Date',
+  discharge_date: 'Discharge Date',
+  issue_category: 'Issue Category',
+  issue_description: 'Issue Description',
+  involved_amount: 'Involved Amount',
+  audit_org: 'Inspection Agency',
+  audit_date: 'Inspection Date',
 };
 
 // ==================== 数据加载 ====================
@@ -239,9 +240,9 @@ async function handleFileUpload(file: File) {
     }
 
     showAnalysis.value = true;
-    ElMessage.success('文件分析完成，请确认列映射');
+    ElMessage.success('File analysis completed. Please confirm the column mapping.');
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '上传失败';
+    const msg = error?.response?.data?.error || error?.message || 'Upload failed.';
     ElMessage.error(msg);
   } finally {
     uploading.value = false;
@@ -267,7 +268,7 @@ async function handlePreview() {
     previewRecords.value = result.preview;
     showPreview.value = true;
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '预览失败';
+    const msg = error?.response?.data?.error || error?.message || 'Preview failed.';
     ElMessage.error(msg);
   } finally {
     previewLoading.value = false;
@@ -284,7 +285,7 @@ async function handleConfirmImport() {
       column_mapping: confirmedMapping.value,
     });
     ElMessage.success(
-      `导入完成：共 ${result.summary.total} 条，成功 ${result.summary.success} 条`,
+      `Import completed: ${result.summary.success} of ${result.summary.total} records succeeded.`,
     );
     showAnalysis.value = false;
     showPreview.value = false;
@@ -293,7 +294,7 @@ async function handleConfirmImport() {
     await loadRawRecords();
     await loadStats();
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '导入失败';
+    const msg = error?.response?.data?.error || error?.message || 'Import failed.';
     ElMessage.error(msg);
   } finally {
     importing.value = false;
@@ -303,11 +304,11 @@ async function handleConfirmImport() {
 /** 重置导入流程 */
 async function handleBuildAuditTask() {
   if (!auditBatchId.value) {
-    ElMessage.warning('请选择导入批次');
+    ElMessage.warning('Please select an import batch.');
     return;
   }
   if (auditSelectedSchemas.value.length === 0) {
-    ElMessage.warning('请选择审查方案');
+    ElMessage.warning('Please select at least one audit scheme.');
     return;
   }
 
@@ -320,13 +321,13 @@ async function handleBuildAuditTask() {
     });
     auditBuildResult.value = result;
     ElMessage.success(
-      `已创建审查任务：${result.task.name}，共 ${result.hospitalization_count} 个住院号`,
+      `Audit task "${result.task.name}" created with ${result.hospitalization_count} hospitalization IDs.`,
     );
     await loadImportBatches();
     await loadRawRecords();
     await loadStats();
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '创建审查任务失败';
+    const msg = error?.response?.data?.error || error?.message || 'Failed to create the audit task.';
     ElMessage.error(msg);
   } finally {
     auditBuildLoading.value = false;
@@ -335,7 +336,7 @@ async function handleBuildAuditTask() {
 
 async function handleAlignResults(resetPage = false) {
   if (!alignmentBatchId.value) {
-    ElMessage.warning('请选择导入批次');
+    ElMessage.warning('Please select an import batch.');
     return;
   }
   if (resetPage) {
@@ -345,7 +346,7 @@ async function handleAlignResults(resetPage = false) {
   const taskIdText = alignmentTaskId.value.trim();
   const taskId = taskIdText ? Number(taskIdText) : undefined;
   if (taskIdText && Number.isNaN(taskId)) {
-    ElMessage.warning('任务ID必须是数字');
+    ElMessage.warning('Task ID must be numeric.');
     return;
   }
 
@@ -363,10 +364,10 @@ async function handleAlignResults(resetPage = false) {
     stats.value.alignmentRate = result.summary.alignmentRate;
     stats.value.diffCount = result.summary.diffCount;
     stats.value.unresolvedDiffCount = result.summary.unresolvedDiffCount;
-    const llmText = result.llm_enabled ? '，已启用大模型复核' : '';
-    ElMessage.success(`对齐完成：对齐率 ${result.summary.alignmentRate}%${llmText}`);
+    const llmText = result.llm_enabled ? ', with LLM review enabled' : '';
+    ElMessage.success(`Alignment completed: ${result.summary.alignmentRate}% alignment rate${llmText}.`);
   } catch (error: any) {
-    const msg = error?.response?.data?.error || error?.message || '结果对齐失败';
+    const msg = error?.response?.data?.error || error?.message || 'Result alignment failed.';
     ElMessage.error(msg);
   } finally {
     alignmentLoading.value = false;
@@ -381,7 +382,7 @@ function showAlignmentDetail(row: AlignmentResult) {
 function openSystemResultDetail(row?: AlignmentResult | null) {
   const target = row || selectedAlignmentDetail.value;
   if (!target?.systemResultId) {
-    ElMessage.warning('当前行没有可查看的系统违规明细');
+    ElMessage.warning('No system violation detail is available for this row.');
     return;
   }
   router.push({
@@ -433,8 +434,8 @@ onMounted(() => {
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">飞检结果管理</div>
-          <div class="title-sub">飞检结果导入 → 自动审查构建 → 结果对齐 </div>
+          <div class="title-main">Inspection Comparison</div>
+          <div class="title-sub">Inspection import → automated audit task construction → result alignment</div>
         </div>
       </div>
 
@@ -442,27 +443,27 @@ onMounted(() => {
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-value" style="color: #1677ff">{{ stats.totalImports }}</div>
-          <div class="stat-label">导入批次</div>
+          <div class="stat-label">Import Batches</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: #722ed1">{{ stats.totalRawRecords }}</div>
-          <div class="stat-label">原始记录</div>
+          <div class="stat-label">Raw Records</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: #52c41a">{{ stats.auditTaskCount }}</div>
-          <div class="stat-label">审查任务</div>
+          <div class="stat-label">Audit Tasks</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: #1677ff">{{ stats.alignmentRate }}%</div>
-          <div class="stat-label">对齐率</div>
+          <div class="stat-label">Alignment Rate</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: #faad14">{{ stats.diffCount }}</div>
-          <div class="stat-label">差异总数</div>
+          <div class="stat-label">Total Differences</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" style="color: #ff4d4f">{{ stats.unresolvedDiffCount }}</div>
-          <div class="stat-label">待解决差异</div>
+          <div class="stat-label">Unresolved Differences</div>
         </div>
       </div>
 
@@ -470,17 +471,17 @@ onMounted(() => {
       <el-tabs v-model="activeTab" type="border-card" class="main-tabs" @tab-change="(tab: string) => { if (tab === 'records') loadRawRecords(); if (tab === 'import') loadImportBatches(); }">
 
         <!-- ==================== Tab 1: 飞检结果导入 ==================== -->
-        <el-tab-pane label="飞检结果导入" name="import">
+        <el-tab-pane label="Inspection Import" name="import">
           <div class="tab-header">
             <div class="tab-copy">
-              <div class="tab-title">飞检结果文件导入</div>
+              <div class="tab-title">Inspection Result File Import</div>
               <div class="tab-desc">
-                从飞检结果文件中提取住院号及问题信息，自动解析列结构并导入
+                Extract hospitalization IDs and issue information from inspection result files, automatically parse the column structure, and import the records.
               </div>
             </div>
             <div class="tab-actions">
               <el-button type="primary" :icon="Upload" :loading="uploading" @click="triggerFileInput">
-                {{ uploading ? '分析中...' : '上传飞检文件' }}
+                {{ uploading ? 'Analyzing...' : 'Upload Inspection File' }}
               </el-button>
               <input ref="fileInputRef" type="file" accept=".xlsx,.xls,.csv" style="display: none" @change="onFileInputChange" />
             </div>
@@ -489,7 +490,7 @@ onMounted(() => {
           <!-- 分析结果：列映射确认 -->
           <div v-if="showAnalysis && currentBatch" class="analysis-panel">
             <el-alert
-              :title="`文件「${currentBatch.file_name}」分析完成，请确认列映射后点击导入`"
+              :title="`File '${currentBatch.file_name}' analyzed. Please confirm the column mapping before importing.`"
               type="success"
               :closable="false"
               show-icon
@@ -499,16 +500,16 @@ onMounted(() => {
             <div class="analysis-grid">
               <!-- 左：列映射 -->
               <div class="analysis-left">
-                <div class="list-title">列映射确认</div>
+                <div class="list-title">Column Mapping Confirmation</div>
                 <div class="table-card">
                   <table class="mapping-table">
                     <thead>
                       <tr>
-                        <th>目标字段</th>
-                        <th>匹配到的列</th>
-                        <th>置信度</th>
-                        <th>方法</th>
-                        <th>手动调整</th>
+                        <th>Target Field</th>
+                        <th>Matched Column</th>
+                        <th>Confidence</th>
+                        <th>Method</th>
+                        <th>Manual Adjustment</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -551,13 +552,13 @@ onMounted(() => {
                           {{ fieldLabels[field] || field }}
                         </td>
                         <td colspan="3">
-                          <el-tag size="small" type="danger">未匹配</el-tag>
+                          <el-tag size="small" type="danger">Unmatched</el-tag>
                         </td>
                         <td>
                           <el-select
                             :model-value="confirmedMapping[field] || ''"
                             size="small"
-                            placeholder="手动选择"
+                            placeholder="Select manually"
                             clearable
                             style="width: 150px"
                             @change="(val: string) => updateMapping(field, val)"
@@ -578,7 +579,7 @@ onMounted(() => {
 
               <!-- 右：样本数据 -->
               <div class="analysis-right">
-                <div class="list-title">样本数据预览（前5行）</div>
+                <div class="list-title">Sample Preview (First 5 Rows)</div>
                 <div class="sample-table-wrap">
                   <table class="sample-table">
                     <thead>
@@ -597,7 +598,7 @@ onMounted(() => {
                 </div>
 
                 <div v-if="unmappedColumns.length" class="mt-3">
-                  <span class="muted">未识别列：</span>
+                  <span class="muted">Unrecognized columns:</span>
                   <el-tag v-for="col in unmappedColumns" :key="col" size="small" class="mr-1" type="info">{{ col }}</el-tag>
                 </div>
               </div>
@@ -605,16 +606,20 @@ onMounted(() => {
 
             <!-- 预览 -->
             <div v-if="showPreview" class="mt-3">
-              <div class="list-title">导入预览</div>
+              <div class="list-title">Import Preview</div>
               <div class="table-card">
                 <el-table :data="previewRecords" border size="small" style="width: 100%">
-                  <el-table-column prop="row_index" label="行号" width="70" align="center" />
-                  <el-table-column prop="hospitalization_no" label="住院号" width="150" />
-                  <el-table-column prop="patient_name" label="患者" width="80" />
-                  <el-table-column prop="hospital_name" label="医疗机构" min-width="140" />
-                  <el-table-column prop="issue_category" label="问题类别" width="100" />
-                  <el-table-column prop="issue_description" label="问题描述" min-width="160" show-overflow-tooltip />
-                  <el-table-column label="涉及金额" width="110" align="center">
+                  <el-table-column prop="row_index" label="Row" width="70" align="center" />
+                  <el-table-column prop="hospitalization_no" label="Hospitalization ID" width="150" />
+                  <el-table-column prop="patient_name" label="Patient" width="80" />
+                  <el-table-column prop="hospital_name" label="Medical Institution" min-width="140" />
+                  <el-table-column label="Issue Category" width="130">
+                    <template #default="{ row }">
+                      {{ getRuleTypeLabel(row.issue_category) }}
+                    </template>
+                  </el-table-column>
+                  <el-table-column prop="issue_description" label="Issue Description" min-width="160" show-overflow-tooltip />
+                  <el-table-column label="Amount" width="110" align="center">
                     <template #default="{ row }">{{ row.involved_amount?.toLocaleString() }}</template>
                   </el-table-column>
                 </el-table>
@@ -623,83 +628,87 @@ onMounted(() => {
 
             <!-- 操作按钮 -->
             <div class="mt-3 flex justify-end gap-3">
-              <el-button @click="resetImport">取消</el-button>
-              <el-button :loading="previewLoading" @click="handlePreview">预览导入</el-button>
+              <el-button @click="resetImport">Cancel</el-button>
+              <el-button :loading="previewLoading" @click="handlePreview">Preview Import</el-button>
               <el-button type="primary" :loading="importing" @click="handleConfirmImport">
-                确认导入
+                Confirm Import
               </el-button>
             </div>
           </div>
 
           <!-- 导入批次列表 -->
-          <div class="list-title" style="margin-top: 16px">导入批次记录</div>
+          <div class="list-title" style="margin-top: 16px">Import Batch Records</div>
           <div class="table-card">
             <el-table :data="importBatches" v-loading="importBatchesLoading" border style="width: 100%" class="task-table">
-              <el-table-column prop="file_name" label="文件名" min-width="280" />
-              <el-table-column label="文件大小" width="110" align="center">
+              <el-table-column prop="file_name" label="File Name" min-width="280" />
+              <el-table-column label="File Size" width="110" align="center">
                 <template #default="{ row }">{{ formatFileSize(row.file_size) }}</template>
               </el-table-column>
-              <el-table-column label="记录数" width="90" align="center">
+              <el-table-column label="Records" width="90" align="center">
                 <template #default="{ row }">{{ row.record_count || row.success_count || '-' }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="100" align="center">
+              <el-table-column label="Status" width="100" align="center">
                 <template #default="{ row }">
                   <el-tag :type="getBatchStatusType(row.status)" size="small">{{ row.status_label }}</el-tag>
                 </template>
               </el-table-column>
-              <el-table-column prop="created_at" label="导入时间" width="180" align="center" />
-              <el-table-column label="操作" width="140" align="center">
+              <el-table-column prop="created_at" label="Imported At" width="180" align="center" />
+              <el-table-column label="Actions" width="140" align="center">
                 <template #default="{ row }">
-                  <el-button link type="primary" :icon="Search" @click="rawFilter.batchId = String(row.id); activeTab = 'records';">查看记录</el-button>
+                  <el-button link type="primary" :icon="Search" @click="rawFilter.batchId = String(row.id); activeTab = 'records';">View Records</el-button>
                 </template>
               </el-table-column>
-              <template #empty><el-empty description="暂无导入记录" /></template>
+              <template #empty><el-empty description="No import records available." /></template>
             </el-table>
           </div>
         </el-tab-pane>
 
         <!-- ==================== Tab 2: 原始记录查看 ==================== -->
-        <el-tab-pane label="原始记录" name="records">
+        <el-tab-pane label="Raw Records" name="records">
           <div class="tab-header">
-            <span class="tab-desc">查看已导入的飞检原始记录</span>
+            <span class="tab-desc">View imported inspection raw records.</span>
           </div>
 
           <div class="query-card">
             <div class="query-row">
               <div class="query-left">
                 <div class="query-item">
-                  <div class="query-label">住院号</div>
-                  <el-input v-model="rawFilter.keyword" placeholder="输入住院号" clearable style="width: 180px" @keyup.enter="loadRawRecords" />
+                  <div class="query-label">Hospitalization ID</div>
+                  <el-input v-model="rawFilter.keyword" placeholder="Enter hospitalization ID" clearable style="width: 180px" @keyup.enter="loadRawRecords" />
                 </div>
                 <div class="query-item">
-                  <div class="query-label">批次</div>
-                  <el-select v-model="rawFilter.batchId" placeholder="全部" clearable style="width: 200px" @change="loadRawRecords">
+                  <div class="query-label">Batch</div>
+                  <el-select v-model="rawFilter.batchId" placeholder="All" clearable style="width: 200px" @change="loadRawRecords">
                     <el-option v-for="b in importBatches" :key="b.id" :label="b.file_name" :value="String(b.id)" />
                   </el-select>
                 </div>
                 <div class="query-actions">
-                  <el-button type="primary" :icon="Search" @click="loadRawRecords">查询</el-button>
-                  <el-button :icon="Refresh" @click="rawFilter.keyword = ''; rawFilter.batchId = ''; loadRawRecords();">重置</el-button>
+                  <el-button type="primary" :icon="Search" @click="loadRawRecords">Search</el-button>
+                  <el-button :icon="Refresh" @click="rawFilter.keyword = ''; rawFilter.batchId = ''; loadRawRecords();">Reset</el-button>
                 </div>
               </div>
             </div>
           </div>
 
-          <div class="list-title">原始记录列表</div>
+          <div class="list-title">Raw Record List</div>
           <div class="table-card">
             <el-table :data="rawRecords" v-loading="rawLoading" border style="width: 100%" class="task-table">
-              <el-table-column prop="hospitalization_no" label="住院号" width="150" align="center" />
-              <el-table-column prop="patient_name" label="患者" width="80" align="center" />
-              <el-table-column prop="hospital_name" label="医疗机构" min-width="160" />
-              <el-table-column prop="issue_category" label="问题类别" width="110" align="center" />
-              <el-table-column prop="issue_description" label="问题描述" min-width="200" show-overflow-tooltip />
-              <el-table-column label="涉及金额" width="110" align="center">
+              <el-table-column prop="hospitalization_no" label="Hospitalization ID" width="150" align="center" />
+              <el-table-column prop="patient_name" label="Patient" width="80" align="center" />
+              <el-table-column prop="hospital_name" label="Medical Institution" min-width="160" />
+              <el-table-column label="Issue Category" width="130" align="center">
+                <template #default="{ row }">
+                  {{ getRuleTypeLabel(row.issue_category) }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="issue_description" label="Issue Description" min-width="200" show-overflow-tooltip />
+              <el-table-column label="Amount" width="110" align="center">
                 <template #default="{ row }">{{ row.involved_amount?.toLocaleString() }}</template>
               </el-table-column>
-              <el-table-column prop="audit_org" label="飞检机构" width="150" align="center" />
-              <el-table-column prop="audit_date" label="飞检日期" width="110" align="center" />
-              <el-table-column prop="import_file_name" label="来源文件" min-width="180" show-overflow-tooltip />
-              <template #empty><el-empty description="暂无数据" /></template>
+              <el-table-column prop="audit_org" label="Inspection Agency" width="150" align="center" />
+              <el-table-column prop="audit_date" label="Inspection Date" width="110" align="center" />
+              <el-table-column prop="import_file_name" label="Source File" min-width="180" show-overflow-tooltip />
+              <template #empty><el-empty description="No data available." /></template>
             </el-table>
             <div class="pager">
               <el-pagination
@@ -718,41 +727,41 @@ onMounted(() => {
         </el-tab-pane>
 
         <!-- ==================== Tab 3: 自动审查构建 ==================== -->
-        <el-tab-pane label="自动审查构建" name="audit">
+        <el-tab-pane label="Audit Task Construction" name="audit">
           <div class="tab-header">
-            <span class="tab-desc">根据已导入飞检批次中的住院号创建审查任务，并可立即加入计算队列</span>
+            <span class="tab-desc">Create audit tasks from hospitalization IDs in imported inspection batches and optionally submit them to the execution queue immediately.</span>
           </div>
           <div class="audit-build-panel">
             <div class="query-card">
               <div class="query-row">
                 <div class="query-left">
                   <div class="query-item">
-                    <div class="query-label">导入批次</div>
+                    <div class="query-label">Import Batch</div>
                     <el-select
                       v-model="auditBatchId"
-                      placeholder="选择已导入成功的批次"
+                      placeholder="Select a successfully imported batch"
                       filterable
                       style="width: 320px"
                     >
                       <el-option
                         v-for="batch in successfulBatches"
                         :key="batch.id"
-                        :label="`${batch.file_name}（${batch.success_count || batch.record_count}条）`"
+                        :label="`${batch.file_name} (${batch.success_count || batch.record_count} records)`"
                         :value="batch.id"
                       />
                     </el-select>
                   </div>
                   <div class="query-item">
-                    <div class="query-label">任务名称</div>
+                    <div class="query-label">Task Name</div>
                     <el-input
                       v-model="auditTaskName"
                       clearable
-                      placeholder="不填则自动生成"
+                      placeholder="Leave blank to auto-generate"
                       style="width: 260px"
                     />
                   </div>
                   <div class="query-item">
-                    <div class="query-label">审查方案</div>
+                    <div class="query-label">Audit Schemes</div>
                     <el-select
                       v-model="auditSelectedSchemas"
                       multiple
@@ -769,11 +778,11 @@ onMounted(() => {
                     </el-select>
                   </div>
                   <div class="query-item">
-                    <div class="query-label">执行方式</div>
+                    <div class="query-label">Execution Mode</div>
                     <el-switch
                       v-model="auditExecuteNow"
-                      active-text="立即执行"
-                      inactive-text="仅创建"
+                      active-text="Run Now"
+                      inactive-text="Create Only"
                     />
                   </div>
                   <div class="query-actions">
@@ -783,7 +792,7 @@ onMounted(() => {
                       :loading="auditBuildLoading"
                       @click="handleBuildAuditTask"
                     >
-                      构建审查任务
+                      Build Audit Task
                     </el-button>
                   </div>
                 </div>
@@ -792,15 +801,15 @@ onMounted(() => {
 
             <div v-if="selectedAuditBatch" class="audit-build-summary">
               <div class="summary-item">
-                <span class="muted">当前批次</span>
+                <span class="muted">Current Batch</span>
                 <strong>{{ selectedAuditBatch.file_name }}</strong>
               </div>
               <div class="summary-item">
-                <span class="muted">导入记录</span>
+                <span class="muted">Imported Records</span>
                 <strong>{{ selectedAuditBatch.success_count || selectedAuditBatch.record_count }}</strong>
               </div>
               <div class="summary-item">
-                <span class="muted">状态</span>
+                <span class="muted">Status</span>
                 <el-tag :type="getBatchStatusType(selectedAuditBatch.status)" size="small">
                   {{ selectedAuditBatch.status_label }}
                 </el-tag>
@@ -815,8 +824,8 @@ onMounted(() => {
               class="mt-3"
             >
               <template #title>
-                已创建任务 {{ auditBuildResult.task.name }}，共
-                {{ auditBuildResult.hospitalization_count }} 个住院号，任务ID：
+                Task {{ auditBuildResult.task.name }} created with
+                {{ auditBuildResult.hospitalization_count }} hospitalization IDs. Task ID:
                 {{ auditBuildResult.task.id }}
               </template>
             </el-alert>
@@ -824,45 +833,45 @@ onMounted(() => {
         </el-tab-pane>
 
         <!-- ==================== Tab 4: 结果对齐 ==================== -->
-        <el-tab-pane label="结果对齐" name="alignment">
+        <el-tab-pane label="Result Alignment" name="alignment">
           <div class="tab-header">
-            <span class="tab-desc">按住院号、问题类型归一、文本相似度与金额接近度匹配飞检和系统审查结果</span>
+            <span class="tab-desc">Align inspection findings with system audit results using hospitalization ID matching, normalized issue types, text similarity, and amount proximity.</span>
           </div>
           <div class="alignment-panel">
             <div class="query-card">
               <div class="query-row">
                 <div class="query-left">
                   <div class="query-item">
-                    <div class="query-label">导入批次</div>
+                    <div class="query-label">Import Batch</div>
                     <el-select
                       v-model="alignmentBatchId"
                       filterable
-                      placeholder="选择需要对齐的批次"
+                      placeholder="Select a batch to align"
                       style="width: 320px"
                     >
                       <el-option
                         v-for="batch in successfulBatches"
                         :key="batch.id"
-                        :label="`${batch.file_name}（${batch.success_count || batch.record_count}条）`"
+                        :label="`${batch.file_name} (${batch.success_count || batch.record_count} records)`"
                         :value="batch.id"
                       />
                     </el-select>
                   </div>
                   <div class="query-item">
-                    <div class="query-label">审查任务ID</div>
+                    <div class="query-label">Audit Task ID</div>
                     <el-input
                       v-model="alignmentTaskId"
                       clearable
-                      placeholder="不填则自动使用批次关联任务"
+                      placeholder="Leave blank to use the batch-linked task automatically"
                       style="width: 240px"
                     />
                   </div>
                   <div class="query-item">
-                    <div class="query-label">大模型匹配</div>
+                    <div class="query-label">LLM Matching</div>
                     <el-switch
                       v-model="alignmentUseLlm"
-                      active-text="开启"
-                      inactive-text="关闭"
+                      active-text="On"
+                      inactive-text="Off"
                     />
                   </div>
                   <div class="query-actions">
@@ -872,7 +881,7 @@ onMounted(() => {
                       :loading="alignmentLoading"
                       @click="handleAlignResults(true)"
                     >
-                      开始对齐
+                      Start Alignment
                     </el-button>
                   </div>
                 </div>
@@ -881,42 +890,42 @@ onMounted(() => {
 
             <div v-if="selectedAlignmentBatch" class="audit-build-summary">
               <div class="summary-item">
-                <span class="muted">当前批次</span>
+                <span class="muted">Current Batch</span>
                 <strong>{{ selectedAlignmentBatch.file_name }}</strong>
               </div>
               <div class="summary-item">
-                <span class="muted">导入记录</span>
+                <span class="muted">Imported Records</span>
                 <strong>{{ selectedAlignmentBatch.success_count || selectedAlignmentBatch.record_count }}</strong>
               </div>
               <div class="summary-item">
-                <span class="muted">任务ID</span>
-                <strong>{{ alignmentResult?.task_id || alignmentTaskId || '自动推断' }}</strong>
+                <span class="muted">Task ID</span>
+                <strong>{{ alignmentResult?.task_id || alignmentTaskId || 'Auto-inferred' }}</strong>
               </div>
             </div>
 
             <div v-if="alignmentResult" class="alignment-summary">
               <div class="alignment-stat">
-                <span>总数</span>
+                <span>Total</span>
                 <strong>{{ alignmentResult.summary.total }}</strong>
               </div>
               <div class="alignment-stat success">
-                <span>完全匹配</span>
+                <span>Exact Match</span>
                 <strong>{{ alignmentResult.summary.matched }}</strong>
               </div>
               <div class="alignment-stat warning">
-                <span>部分匹配</span>
+                <span>Partial Match</span>
                 <strong>{{ alignmentResult.summary.partial }}</strong>
               </div>
               <div class="alignment-stat danger">
-                <span>仅飞检发现</span>
+                <span>Inspection Only</span>
                 <strong>{{ alignmentResult.summary.unmatched }}</strong>
               </div>
               <div class="alignment-stat info">
-                <span>系统额外发现</span>
+                <span>System Only</span>
                 <strong>{{ alignmentResult.summary.systemOnly }}</strong>
               </div>
               <div class="alignment-stat primary">
-                <span>对齐率</span>
+                <span>Alignment Rate</span>
                 <strong>{{ alignmentResult.summary.alignmentRate }}%</strong>
               </div>
             </div>
@@ -929,27 +938,27 @@ onMounted(() => {
                 class="task-table"
                 style="width: 100%"
               >
-                <el-table-column prop="hospitalizationNo" label="住院号" width="150" align="center" />
-                <el-table-column prop="patientName" label="患者" width="90" align="center" />
-                <el-table-column label="飞检问题" min-width="240">
+                <el-table-column prop="hospitalizationNo" label="Hospitalization ID" width="150" align="center" />
+                <el-table-column prop="patientName" label="Patient" width="90" align="center" />
+                <el-table-column label="Inspection Issue" min-width="240">
                   <template #default="{ row }">
                     <div class="issue-main issue-text">{{ row.feijianIssue || '-' }}</div>
-                    <div class="muted">{{ row.feijianCategory || '-' }}</div>
+                    <div class="muted">{{ getRuleTypeLabel(row.feijianCategory) }}</div>
                   </template>
                 </el-table-column>
-                <el-table-column label="系统问题" min-width="360">
+                <el-table-column label="System Issue" min-width="360">
                   <template #default="{ row }">
                     <div class="issue-main issue-text system-issue-text">{{ row.systemIssue || '-' }}</div>
-                    <div class="muted">{{ row.systemCategory || '-' }}</div>
+                    <div class="muted">{{ getRuleTypeLabel(row.systemCategory) }}</div>
                   </template>
                 </el-table-column>
-                <el-table-column label="金额" width="140" align="center">
+                <el-table-column label="Amount" width="140" align="center">
                   <template #default="{ row }">
                     <div>{{ row.feijianAmount?.toLocaleString() || 0 }}</div>
                     <div class="muted">{{ row.systemAmount?.toLocaleString() || 0 }}</div>
                   </template>
                 </el-table-column>
-                <el-table-column label="匹配状态" width="120" align="center">
+                <el-table-column label="Match Status" width="120" align="center">
                   <template #default="{ row }">
                     <el-tag :type="getMatchStatusType(row.matchStatus)" size="small">
                       {{ row.matchStatusLabel }}
@@ -959,22 +968,22 @@ onMounted(() => {
                 <el-table-column width="110" align="center">
                   <template #header>
                     <el-tooltip
-                      content="匹配度是后端按住院号一致、问题类型归一、文本相似度、金额接近度以及大模型复核综合得到的 0-100 分。"
+                      content="The match score is a 0-100 score computed by the backend using hospitalization ID consistency, normalized issue type, text similarity, amount proximity, and LLM review."
                       placement="top"
                     >
-                      <span>匹配度</span>
+                      <span>Match Score</span>
                     </el-tooltip>
                   </template>
                   <template #default="{ row }">
                     {{ Math.round((row.matchScore || 0) * 100) }}%
                   </template>
                 </el-table-column>
-                <el-table-column label="依据" min-width="180" show-overflow-tooltip>
+                <el-table-column label="Evidence" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.matchReasons?.join('、') || '-' }}
                   </template>
                 </el-table-column>
-                <el-table-column label="操作" width="140" fixed="right" align="center">
+                <el-table-column label="Actions" width="140" fixed="right" align="center">
                   <template #default="{ row }">
                     <el-button
                       type="primary"
@@ -982,12 +991,12 @@ onMounted(() => {
                       :icon="Search"
                       @click="showAlignmentDetail(row)"
                     >
-                      查看
+                      View
                     </el-button>
                   </template>
                 </el-table-column>
                 <template #empty>
-                  <el-empty description="请选择批次并执行对齐" />
+                  <el-empty description="Select a batch and run alignment." />
                 </template>
               </el-table>
               <div class="pager">
@@ -1009,7 +1018,7 @@ onMounted(() => {
 
         <el-dialog
           v-model="alignmentDetailVisible"
-          title="对齐明细"
+          title="Alignment Details"
           width="760px"
           destroy-on-close
         >
@@ -1018,7 +1027,7 @@ onMounted(() => {
               <div>
                 <div class="detail-title">{{ selectedAlignmentDetail.hospitalizationNo }}</div>
                 <div class="muted">
-                  {{ selectedAlignmentDetail.patientName || '未知患者' }}
+                  {{ selectedAlignmentDetail.patientName || 'Unknown Patient' }}
                   <span v-if="selectedAlignmentDetail.hospitalName">
                     · {{ selectedAlignmentDetail.hospitalName }}
                   </span>
@@ -1031,39 +1040,39 @@ onMounted(() => {
 
             <div class="detail-grid">
               <div class="detail-block">
-                <div class="detail-label">飞检问题</div>
+                <div class="detail-label">Inspection Issue</div>
                 <div class="detail-text">{{ selectedAlignmentDetail.feijianIssue || '-' }}</div>
                 <div class="detail-meta">
-                  类型：{{ selectedAlignmentDetail.feijianCategory || '-' }}
+                  Category: {{ getRuleTypeLabel(selectedAlignmentDetail.feijianCategory) }}
                 </div>
                 <div class="detail-meta">
-                  金额：{{ selectedAlignmentDetail.feijianAmount?.toLocaleString() || 0 }}
+                  Amount: {{ selectedAlignmentDetail.feijianAmount?.toLocaleString() || 0 }}
                 </div>
               </div>
               <div class="detail-block">
-                <div class="detail-label">系统问题</div>
+                <div class="detail-label">System Issue</div>
                 <div class="detail-text">{{ selectedAlignmentDetail.systemIssue || '-' }}</div>
                 <div class="detail-meta">
-                  类型：{{ selectedAlignmentDetail.systemCategory || '-' }}
+                  Category: {{ getRuleTypeLabel(selectedAlignmentDetail.systemCategory) }}
                 </div>
                 <div class="detail-meta">
-                  金额：{{ selectedAlignmentDetail.systemAmount?.toLocaleString() || 0 }}
+                  Amount: {{ selectedAlignmentDetail.systemAmount?.toLocaleString() || 0 }}
                 </div>
               </div>
             </div>
 
             <div class="detail-block">
-              <div class="detail-label">匹配度</div>
+              <div class="detail-label">Match Score</div>
               <div class="detail-score">
                 {{ Math.round((selectedAlignmentDetail.matchScore || 0) * 100) }}%
               </div>
               <div class="detail-meta">
-                综合住院号、问题类型、文本相似度、金额接近度及大模型复核结果计算。
+                Computed from hospitalization ID consistency, normalized issue type, text similarity, amount proximity, and LLM review.
               </div>
             </div>
 
             <div class="detail-block">
-              <div class="detail-label">匹配依据</div>
+              <div class="detail-label">Matching Evidence</div>
               <el-tag
                 v-for="reason in selectedAlignmentDetail.matchReasons || []"
                 :key="reason"
@@ -1073,18 +1082,18 @@ onMounted(() => {
               >
                 {{ reason }}
               </el-tag>
-              <span v-if="!selectedAlignmentDetail.matchReasons?.length" class="muted">暂无依据</span>
+              <span v-if="!selectedAlignmentDetail.matchReasons?.length" class="muted">No evidence available.</span>
             </div>
           </div>
 
           <template #footer>
-            <el-button @click="alignmentDetailVisible = false">关闭</el-button>
+            <el-button @click="alignmentDetailVisible = false">Close</el-button>
             <el-button
               type="primary"
               :disabled="!selectedAlignmentDetail?.systemResultId"
               @click="openSystemResultDetail()"
             >
-              打开违规详情
+              Open Violation Detail
             </el-button>
           </template>
         </el-dialog>
@@ -1540,4 +1549,3 @@ onMounted(() => {
   }
 }
 </style>
-

@@ -99,7 +99,7 @@ const fetchData = async () => {
     resetCompileState();
   } catch (error) {
     console.error(error);
-    ElMessage.error('获取规则列表失败');
+    ElMessage.error('Failed to load the rule list');
   } finally {
     loading.value = false;
   }
@@ -123,11 +123,11 @@ const handleSelectRule = (rule: RuleListItem) => {
 
 const handleCompile = async () => {
   if (!selectedRule.value) {
-    ElMessage.warning('请先选择规则');
+    ElMessage.warning('Please select a rule first');
     return;
   }
   if (!selectedRule.value.description.trim()) {
-    ElMessage.warning('当前规则描述为空，无法编译');
+    ElMessage.warning('The selected rule has no description and cannot be compiled');
     return;
   }
 
@@ -137,15 +137,15 @@ const handleCompile = async () => {
     const result = await generateRuleApi(buildCompileInput(selectedRule.value));
     const nextCode = result?.generated_code || '';
     if (!nextCode.trim()) {
-      ElMessage.error('编译结果为空');
+      ElMessage.error('The compilation result is empty');
       return;
     }
     generatedCode.value = nextCode;
     compiledReady.value = true;
-    ElMessage.success('规则编译成功');
+    ElMessage.success('Rule compiled successfully');
   } catch (error) {
     console.error(error);
-    ElMessage.error('规则编译失败');
+    ElMessage.error('Rule compilation failed');
   } finally {
     compiling.value = false;
   }
@@ -153,29 +153,29 @@ const handleCompile = async () => {
 
 const handleCopy = async () => {
   if (!generatedCode.value.trim()) {
-    ElMessage.warning('暂无可复制的代码');
+    ElMessage.warning('There is no code available to copy');
     return;
   }
   try {
     await navigator.clipboard.writeText(generatedCode.value);
-    ElMessage.success('已复制生成代码');
+    ElMessage.success('Generated code copied');
   } catch (error) {
     console.error(error);
-    ElMessage.error('复制失败');
+    ElMessage.error('Copy failed');
   }
 };
 
 const handleTest = async () => {
   if (!generatedCode.value.trim()) {
-    ElMessage.warning('请先生成代码后再执行测试');
+    ElMessage.warning('Please generate code before running the test');
     return;
   }
 
   testing.value = true;
   try {
     await new Promise((resolve) => setTimeout(resolve, 3000));
-    await ElMessageBox.alert('测试通过', '执行测试结果', {
-      confirmButtonText: '确定',
+    await ElMessageBox.alert('Test passed', 'Test Result', {
+      confirmButtonText: 'OK',
       type: 'success',
     });
   } finally {
@@ -185,11 +185,11 @@ const handleTest = async () => {
 
 const handleSave = async () => {
   if (!selectedRule.value) {
-    ElMessage.warning('请先选择规则');
+    ElMessage.warning('Please select a rule first');
     return;
   }
   if (!compiledReady.value || !generatedCode.value.trim()) {
-    ElMessage.warning('请先完成编译');
+    ElMessage.warning('Please complete compilation first');
     return;
   }
 
@@ -204,7 +204,7 @@ const handleSave = async () => {
       enabled: true,
       rule_code: generatedCode.value,
     });
-    ElMessage.success('已写回规则库');
+    ElMessage.success('Rule library updated');
     await fetchData();
   } catch (error: any) {
     console.error(error);
@@ -212,7 +212,7 @@ const handleSave = async () => {
       error?.response?.data?.enabled?.[0] ||
       error?.response?.data?.enabled ||
       error?.response?.data?.detail ||
-      '写回规则库失败';
+      'Failed to update the rule library';
     ElMessage.error(message);
   } finally {
     saving.value = false;
@@ -227,8 +227,11 @@ onMounted(fetchData);
     <div class="page-title">
       <div class="title-bar"></div>
       <div>
-        <div class="title-main">规则编译</div>
-        <div class="title-sub">从规则库中选择规则，基于规则名称与描述生成执行代码，并写回当前规则。</div>
+        <div class="title-main">Rule Compilation</div>
+        <div class="title-sub">
+          Select a rule from the rule library, generate executable code from its
+          name and description, and write the result back to the current rule.
+        </div>
       </div>
     </div>
 
@@ -236,8 +239,8 @@ onMounted(fetchData);
       <el-card class="left-panel" shadow="never">
         <template #header>
           <div class="panel-header">
-            <span>规则库</span>
-            <el-button link type="primary" :icon="RefreshRight" @click="fetchData">刷新</el-button>
+            <span>Rule Library</span>
+            <el-button link type="primary" :icon="RefreshRight" @click="fetchData">Refresh</el-button>
           </div>
         </template>
 
@@ -245,12 +248,12 @@ onMounted(fetchData);
           <el-input
             v-model="searchForm.keyword"
             clearable
-            placeholder="搜索规则名称/编码/描述"
+            placeholder="Search by rule name, code, or description"
             @keyup.enter="handleSearch"
           />
           <div class="search-actions">
-            <el-button type="primary" @click="handleSearch">搜索</el-button>
-            <el-button @click="handleReset">重置</el-button>
+            <el-button type="primary" @click="handleSearch">Search</el-button>
+            <el-button @click="handleReset">Reset</el-button>
           </div>
         </div>
 
@@ -265,16 +268,19 @@ onMounted(fetchData);
             <div class="rule-item__top">
               <span class="rule-name">{{ item.drugName || item.ruleId }}</span>
               <el-tag size="small" :type="item.enabled ? 'success' : 'info'">
-                {{ item.enabled ? '启用' : '禁用' }}
+                {{ item.enabled ? 'Enabled' : 'Disabled' }}
               </el-tag>
             </div>
             <div class="rule-item__meta">
               <span>{{ item.type || '-' }}</span>
-              <span>{{ hasCode(item.ruleCode) ? '已编译' : '未编译' }}</span>
+              <span>{{ hasCode(item.ruleCode) ? 'Compiled' : 'Not Compiled' }}</span>
             </div>
             <div class="rule-item__id">{{ item.ruleId }}</div>
           </div>
-          <el-empty v-if="!loading && list.length === 0" description="暂无规则" />
+          <el-empty
+            v-if="!loading && list.length === 0"
+            description="No rules available"
+          />
         </div>
 
         <div class="pager">
@@ -295,14 +301,14 @@ onMounted(fetchData);
       <el-card class="right-panel" shadow="never">
         <template #header>
           <div class="panel-header">
-            <span>编译区</span>
+            <span>Compilation Workspace</span>
             <el-tag :type="selectedRule ? 'primary' : 'info'">
               {{
                 selectedRule
                   ? hasCode(selectedRule.ruleCode)
-                    ? '已编译'
-                    : '未编译'
-                  : '未选择规则'
+                    ? 'Compiled'
+                    : 'Not Compiled'
+                  : 'No Rule Selected'
               }}
             </el-tag>
           </div>
@@ -311,40 +317,61 @@ onMounted(fetchData);
         <template v-if="selectedRule">
           <div class="rule-summary">
             <div class="summary-row">
-              <span class="label">规则名称</span>
+              <span class="label">Rule Name</span>
               <span>{{ selectedRule.drugName || '-' }}</span>
             </div>
             <div class="summary-row">
-              <span class="label">规则类型</span>
+              <span class="label">Rule Type</span>
               <span>{{ selectedRule.type || '-' }}</span>
             </div>
             <div class="summary-row summary-row--block">
-              <span class="label">规则描述</span>
+              <span class="label">Description</span>
               <div class="description-box">{{ selectedRule.description || '-' }}</div>
             </div>
           </div>
 
           <div class="toolbar">
-            <el-button type="primary" :disabled="!canCompile" :loading="compiling" @click="handleCompile">
-              编译规则
+            <el-button
+              type="primary"
+              :disabled="!canCompile"
+              :loading="compiling"
+              @click="handleCompile"
+            >
+              Compile Rule
             </el-button>
-            <el-button :icon="CopyDocument" :disabled="!generatedCode.trim()" @click="handleCopy">
-              复制代码
+            <el-button
+              :icon="CopyDocument"
+              :disabled="!generatedCode.trim()"
+              @click="handleCopy"
+            >
+              Copy Code
             </el-button>
-            <el-button :disabled="!generatedCode.trim()" :loading="testing" @click="handleTest">
-              执行测试
+            <el-button
+              :disabled="!generatedCode.trim()"
+              :loading="testing"
+              @click="handleTest"
+            >
+              Run Test
             </el-button>
-            <el-button type="success" :disabled="!canSave" :loading="saving" @click="handleSave">
-              确认写入规则库
+            <el-button
+              type="success"
+              :disabled="!canSave"
+              :loading="saving"
+              @click="handleSave"
+            >
+              Confirm Writeback
             </el-button>
           </div>
 
-          <div class="result-title">编译结果</div>
+          <div class="result-title">Compilation Result</div>
           <div class="code-box">
-            <pre>{{ generatedCode || '请选择规则后点击“编译规则”生成代码' }}</pre>
+            <pre>{{ generatedCode || 'Select a rule and click "Compile Rule" to generate code' }}</pre>
           </div>
         </template>
-        <el-empty v-else description="请先从左侧选择规则" />
+        <el-empty
+          v-else
+          description="Please select a rule from the left panel first"
+        />
       </el-card>
     </div>
   </div>

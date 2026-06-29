@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus';
 
 // 引入 API
 import { getTaskResultListApi } from '../../api/result';
+import { getRuleTypeLabel } from '../../config/rule-type';
 
 const router = useRouter();
 
@@ -95,7 +96,7 @@ const fetchTableData = async () => {
              parsedItemName = item.violation_item;
            }
         }
-        finalRuleName = parsedItemName || '未知项目';
+        finalRuleName = parsedItemName || 'Unknown Item';
       }
 
       return {
@@ -103,12 +104,13 @@ const fetchTableData = async () => {
         // 🟢 修复：确保 taskId 不为 "undefined" 或 "null" 字符串
         taskId: taskId && taskId !== 'undefined' && taskId !== 'null' ? taskId : '#', // 关联任务ID
         hosNo: item.hospitalization_id,
-        patientName: '未知', // 数据源暂无
+        patientName: 'Unknown', // 数据源暂无
         dept: '-', // 数据源暂无
         doctor: '-', // 数据源暂无
         // 违规信息
         ruleName: finalRuleName,
-        ruleType: item.rule?.type || '通用规则',
+        ruleType: item.rule?.type || 'General Rule',
+        ruleTypeLabel: getRuleTypeLabel(item.rule?.type) || 'General Rule',
         reason: item.reason,
         // 时间信息
         visitDate: '-', // 就诊时间暂无
@@ -122,7 +124,7 @@ const fetchTableData = async () => {
     });
   } catch (error) {
     console.error(error);
-    ElMessage.error('查询失败');
+    ElMessage.error('Query failed.');
   } finally {
     isLoading.value = false;
   }
@@ -180,7 +182,7 @@ onMounted(() => {
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">全量违规查询</div>
+          <div class="title-main">Violation Query</div>
           <div class="title-sub">Full Violation Search & Analysis</div>
         </div>
       </div>
@@ -189,10 +191,10 @@ onMounted(() => {
         <el-form :model="searchForm" label-position="top" class="search-form">
           <el-row :gutter="20">
             <el-col :span="6">
-              <el-form-item label="综合搜索 (住院号)">
+              <el-form-item label="Hospitalization ID">
                 <el-input
                   v-model="searchForm.keyword"
-                  placeholder="输入住院号"
+                  placeholder="Enter hospitalization ID"
                   clearable
                   prefix-icon="Search"
                   @keyup.enter="handleSearch"
@@ -200,20 +202,20 @@ onMounted(() => {
               </el-form-item>
             </el-col>
             <el-col :span="6">
-              <el-form-item label="任务号 (Task ID)">
+              <el-form-item label="Task ID">
                 <el-input
                   v-model="searchForm.taskId"
-                  placeholder="例如：10096"
+                  placeholder="For example: 10096"
                   clearable
                   @keyup.enter="handleSearch"
                 />
               </el-form-item>
             </el-col>
             <el-col :span="6">
-              <el-form-item label="具体规则/药品名称">
+              <el-form-item label="Rule / Drug Name">
                 <el-input
                   v-model="searchForm.ruleName"
-                  placeholder="例如：葡萄糖测定"
+                  placeholder="For example: Glucose Test"
                   clearable
                   @keyup.enter="handleSearch"
                 />
@@ -227,9 +229,9 @@ onMounted(() => {
                   @click="handleSearch"
                   :loading="isLoading"
                 >
-                  查询结果
+                  Search
                 </el-button>
-                <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+                <el-button :icon="Refresh" @click="handleReset">Reset</el-button>
               </div>
             </el-col>
           </el-row>
@@ -240,9 +242,9 @@ onMounted(() => {
         <div class="table-header">
           <div class="left-tip">
             <el-icon><Filter /></el-icon>
-            共检索到
+            Found
             <span class="highlight-num">{{ total }}</span>
-            条疑似违规记录
+            suspected violation records
           </div>
         </div>
 
@@ -254,9 +256,9 @@ onMounted(() => {
           style="width: 100%"
           class="custom-table"
         >
-          <el-table-column prop="hosNo" label="住院号" width="160" fixed />
+          <el-table-column prop="hosNo" label="Hospitalization ID" width="160" fixed />
 
-          <el-table-column label="来源任务" width="120" align="center">
+          <el-table-column label="Source Task" width="120" align="center">
             <template #default="{ row }">
               <el-link
                 v-if="row.taskId && row.taskId !== '#'"
@@ -272,7 +274,7 @@ onMounted(() => {
           </el-table-column>
 
           <el-table-column
-            label="违规项目"
+            label="Violation Item"
             min-width="200"
             show-overflow-tooltip
           >
@@ -281,38 +283,38 @@ onMounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="违规类型" width="160">
+          <el-table-column label="Violation Type" width="160">
             <template #default="{ row }">
               <el-tag size="small" effect="plain">
-                {{ row.ruleType }}
+                {{ row.ruleTypeLabel }}
               </el-tag>
             </template>
           </el-table-column>
 
           <el-table-column
             prop="reason"
-            label="违规原因"
+            label="Reason"
             min-width="250"
             show-overflow-tooltip
           />
 
           <el-table-column
             prop="dischargeTime"
-            label="出院时间"
+            label="Discharge Date"
             width="140"
             align="center"
           />
 
           <el-table-column
             prop="createTime"
-            label="检测时间"
+            label="Detected At"
             width="180"
             align="center"
             class-name="text-gray-500 text-xs"
           />
 
           <el-table-column
-            label="操作"
+            label="Actions"
             width="100"
             fixed="right"
             align="center"
@@ -324,7 +326,7 @@ onMounted(() => {
                 :icon="View"
                 @click="goToDetail(row)"
               >
-                详情
+                Details
               </el-button>
             </template>
           </el-table-column>

@@ -11,6 +11,7 @@ import {
   toggleRuleStatus,
   updateRule,
 } from '#/api/rule';
+import { getRuleTypeLabel, RULE_TYPE_OPTIONS } from '#/config/rule-type';
 
 const router = useRouter();
 
@@ -36,14 +37,14 @@ const form = reactive({
   drugName: '',
   type: '超限定用药',
   description: '',
-  enabled: true,
+  enabled: false,
   ruleCode: '',
 });
 
-const typeOptions = ['超限定用药', '重复收费', '超标准收费', '过度医疗', '超频次收费'];
+const typeOptions = RULE_TYPE_OPTIONS;
 const statusOptions = [
-  { label: '启用', value: 'true' },
-  { label: '停用', value: 'false' },
+  { label: 'Enabled', value: 'true' },
+  { label: 'Disabled', value: 'false' },
 ];
 
 const routeMap: Record<string, string> = {
@@ -57,6 +58,8 @@ const routeMap: Record<string, string> = {
 const hasExecutableCode = (value?: string | null) => Boolean((value || '').trim());
 const isCompiled = (rule: { ruleCode?: string | null; rule_code?: string | null }) =>
   Boolean((rule.rule_code || rule.ruleCode || '').trim());
+const normalizeEnabledState = (enabled: boolean, ruleCode?: string | null) =>
+  hasExecutableCode(ruleCode) ? enabled : false;
 
 const formatDate = (value?: string) => {
   if (!value) return '-';
@@ -85,14 +88,17 @@ const fetchData = async () => {
       drugName: item.drugName || item.drug_name || '-',
       createdAt: item.created_at || '',
       updatedAt: item.updated_at || '',
-      enabled: Boolean(item.enabled),
       ruleCode: item.rule_code || item.ruleCode || '',
       rule_code: item.rule_code || item.ruleCode || '',
+      enabled: normalizeEnabledState(
+        Boolean(item.enabled),
+        item.rule_code || item.ruleCode || '',
+      ),
     }));
     total.value = res?.count || rawList.length || 0;
   } catch (error) {
     console.error(error);
-    ElMessage.error('获取全部规则列表失败');
+    ElMessage.error('Failed to load all rules.');
   } finally {
     loading.value = false;
   }
@@ -122,7 +128,7 @@ const resetForm = () => {
   form.drugName = '';
   form.type = '超限定用药';
   form.description = '';
-  form.enabled = true;
+  form.enabled = false;
   form.ruleCode = '';
 };
 
@@ -139,18 +145,18 @@ const openEdit = (row: any) => {
   form.drugName = row.drugName || '';
   form.type = row.type || '超限定用药';
   form.description = row.description || '';
-  form.enabled = Boolean(row.enabled);
   form.ruleCode = row.ruleCode || row.rule_code || '';
+  form.enabled = normalizeEnabledState(Boolean(row.enabled), form.ruleCode);
   dialogVisible.value = true;
 };
 
 const save = async () => {
   if (!form.description.trim()) {
-    ElMessage.warning('请填写原始描述');
+    ElMessage.warning('Please enter the original description.');
     return;
   }
   if (!form.drugName.trim()) {
-    ElMessage.warning('请填写规则名称');
+    ElMessage.warning('Please enter the rule name.');
     return;
   }
 
@@ -167,10 +173,10 @@ const save = async () => {
   try {
     if (editingId.value) {
       await updateRule(editingId.value, payload);
-      ElMessage.success('已更新');
+      ElMessage.success('Rule updated.');
     } else {
       await createRule(payload);
-      ElMessage.success('已新增');
+      ElMessage.success('Rule created.');
     }
     dialogVisible.value = false;
     fetchData();
@@ -180,44 +186,44 @@ const save = async () => {
       error?.response?.data?.enabled?.[0] ||
       error?.response?.data?.enabled ||
       error?.response?.data?.detail ||
-      '保存失败';
+      'Failed to save the rule.';
     ElMessage.error(message);
   }
 };
 
 const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm(`确定删除规则【${row.drugName}】？`, '删除确认', {
+  await ElMessageBox.confirm(`Delete rule "${row.drugName}"?`, 'Delete Confirmation', {
     type: 'warning',
-    confirmButtonText: '删除',
-    cancelButtonText: '取消',
+    confirmButtonText: 'Delete',
+    cancelButtonText: 'Cancel',
   });
   try {
     await deleteRule(row.id);
-    ElMessage.success('已删除');
+    ElMessage.success('Rule deleted.');
     fetchData();
   } catch (error) {
     console.error(error);
-    ElMessage.error('删除失败');
+    ElMessage.error('Failed to delete the rule.');
   }
 };
 
 const handleStatusChange = async (row: any) => {
   if (!hasExecutableCode(row.ruleCode || row.rule_code)) {
     row.enabled = false;
-    ElMessage.warning('该规则未生成执行代码，无法启用');
+    ElMessage.warning('Compile the rule before enabling it.');
     return;
   }
   const originalStatus = !row.enabled;
   try {
     await toggleRuleStatus(row.id, row.enabled);
-    ElMessage.success(row.enabled ? '已启用' : '已停用');
+    ElMessage.success(row.enabled ? 'Rule enabled.' : 'Rule disabled.');
   } catch (error: any) {
     row.enabled = originalStatus;
     const message =
       error?.response?.data?.enabled?.[0] ||
       error?.response?.data?.enabled ||
       error?.response?.data?.detail ||
-      '状态更新失败';
+      'Failed to update the rule status.';
     ElMessage.error(message);
   }
 };
@@ -235,35 +241,35 @@ onMounted(fetchData);
     <div class="header">
       <div class="title">
         <span class="bar"></span>
-        <span>全部规则</span>
+        <span>All Rules</span>
       </div>
       <div class="header-actions">
-        <el-button type="primary" @click="openAdd">新增</el-button>
+        <el-button type="primary" @click="openAdd">Add</el-button>
         <el-input
           v-model="searchForm.keyword"
           clearable
           style="width: 260px"
-          placeholder="搜索规则名称/编码/描述"
+          placeholder="Search by rule name / ID / description"
           @keyup.enter="handleSearch"
         />
         <el-select
           v-model="searchForm.type"
           clearable
           style="width: 160px"
-          placeholder="规则分类"
+          placeholder="Rule Type"
         >
           <el-option
             v-for="item in typeOptions"
-            :key="item"
-            :label="item"
-            :value="item"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
           />
         </el-select>
         <el-select
           v-model="searchForm.status"
           clearable
           style="width: 120px"
-          placeholder="状态"
+          placeholder="Status"
         >
           <el-option
             v-for="item in statusOptions"
@@ -272,8 +278,8 @@ onMounted(fetchData);
             :value="item.value"
           />
         </el-select>
-        <el-button type="primary" @click="handleSearch">搜索</el-button>
-        <el-button @click="handleReset">重置</el-button>
+        <el-button type="primary" @click="handleSearch">Search</el-button>
+        <el-button @click="handleReset">Reset</el-button>
       </div>
     </div>
 
@@ -285,41 +291,43 @@ onMounted(fetchData);
       row-key="id"
       style="width: 100%"
     >
-      <el-table-column prop="drugName" label="规则名称" min-width="180">
+      <el-table-column prop="drugName" label="Rule Name" min-width="180">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">
             {{ row.drugName }}
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="ruleId" label="规则编码" width="160" />
-      <el-table-column prop="type" label="规则分类" width="160" align="center">
+      <el-table-column prop="ruleId" label="Rule ID" width="160" />
+      <el-table-column prop="type" label="Rule Type" width="160" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="goToTypeRule(row.type)">
-            {{ row.type }}
+            {{ getRuleTypeLabel(row.type) }}
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column label="编译状态" width="120" align="center">
+      <el-table-column label="Compilation" width="120" align="center">
         <template #default="{ row }">
           <el-tag :type="isCompiled(row) ? 'success' : 'warning'">
-            {{ isCompiled(row) ? '已编译' : '未编译' }}
+            {{ isCompiled(row) ? 'Compiled' : 'Not Compiled' }}
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="状态" width="120" align="center">
+      <el-table-column label="Status" width="120" align="center">
         <template #default="{ row }">
           <el-tooltip
             :disabled="hasExecutableCode(row.ruleCode || row.rule_code)"
-            content="该规则未生成执行代码，无法启用"
+            content="Compile the rule before enabling it."
             placement="top"
           >
             <span class="switch-wrapper">
               <el-switch
                 v-model="row.enabled"
                 inline-prompt
-                active-text="启"
-                inactive-text="停"
+                active-text="On"
+                inactive-text="Off"
+                active-color="#16a34a"
+                inactive-color="#64748b"
                 :disabled="!hasExecutableCode(row.ruleCode || row.rule_code)"
                 @change="handleStatusChange(row)"
               />
@@ -327,30 +335,30 @@ onMounted(fetchData);
           </el-tooltip>
         </template>
       </el-table-column>
-      <el-table-column label="创建时间" min-width="180">
+      <el-table-column label="Created At" min-width="180">
         <template #default="{ row }">
           {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
       <el-table-column
         prop="description"
-        label="规则描述"
+        label="Description"
         min-width="280"
         show-overflow-tooltip
       />
-      <el-table-column label="操作" width="220" fixed="right" align="center">
+      <el-table-column label="Actions" width="220" fixed="right" align="center">
         <template #default="{ row }">
           <div class="op-links">
             <el-button link type="primary" class="op-btn" @click="openDetail(row)">
-              详情
+              View
             </el-button>
             <span class="op-sep">|</span>
             <el-button link type="primary" class="op-btn" @click="openEdit(row)">
-              编辑
+              Edit
             </el-button>
             <span class="op-sep">|</span>
             <el-button link type="danger" class="op-btn" @click="handleDelete(row)">
-              删除
+              Delete
             </el-button>
           </div>
         </template>
@@ -371,7 +379,7 @@ onMounted(fetchData);
 
     <el-dialog
       v-model="detailVisible"
-      title="规则详情"
+      title="Rule Details"
       width="900px"
       append-to-body
     >
@@ -382,32 +390,32 @@ onMounted(fetchData);
         size="large"
         class="detail-table"
       >
-        <el-descriptions-item label="规则编码">
+        <el-descriptions-item label="Rule ID">
           {{ currentDetail.ruleId }}
         </el-descriptions-item>
-        <el-descriptions-item label="规则名称">
+        <el-descriptions-item label="Rule Name">
           {{ currentDetail.drugName }}
         </el-descriptions-item>
-        <el-descriptions-item label="规则分类">
-          {{ currentDetail.type }}
+        <el-descriptions-item label="Rule Type">
+          {{ getRuleTypeLabel(currentDetail.type) }}
         </el-descriptions-item>
-        <el-descriptions-item label="规则状态">
+        <el-descriptions-item label="Status">
           <el-tag :type="currentDetail.enabled ? 'success' : 'danger'">
-            {{ currentDetail.enabled ? '启用' : '停用' }}
+            {{ currentDetail.enabled ? 'Enabled' : 'Disabled' }}
           </el-tag>
         </el-descriptions-item>
-        <el-descriptions-item label="创建时间">
+        <el-descriptions-item label="Created At">
           {{ formatDate(currentDetail.createdAt) }}
         </el-descriptions-item>
-        <el-descriptions-item label="更新时间">
+        <el-descriptions-item label="Updated At">
           {{ formatDate(currentDetail.updatedAt) }}
         </el-descriptions-item>
-        <el-descriptions-item label="规则描述" :span="2">
+        <el-descriptions-item label="Description" :span="2">
           {{ currentDetail.description || '-' }}
         </el-descriptions-item>
-        <el-descriptions-item label="规则执行代码" :span="2">
+        <el-descriptions-item label="Execution Code" :span="2">
           <div class="code-scroll-box">
-            <pre>{{ currentDetail.ruleCode || currentDetail.rule_code || '暂无代码' }}</pre>
+            <pre>{{ currentDetail.ruleCode || currentDetail.rule_code || 'No code available.' }}</pre>
           </div>
         </el-descriptions-item>
       </el-descriptions>
@@ -416,45 +424,47 @@ onMounted(fetchData);
     <el-dialog
       v-model="dialogVisible"
       width="980px"
-      :title="editingId ? '编辑规则' : '新增规则'"
+      :title="editingId ? 'Edit Rule' : 'Add Rule'"
       destroy-on-close
     >
       <el-form label-width="140px">
-        <el-form-item label="规则名称">
+        <el-form-item label="Rule Name">
           <el-input v-model="form.drugName" />
         </el-form-item>
 
-        <el-form-item label="规则类型">
+        <el-form-item label="Rule Type">
           <el-select v-model="form.type" style="width: 220px">
             <el-option
               v-for="item in typeOptions"
-              :key="item"
-              :label="item"
-              :value="item"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
             />
           </el-select>
         </el-form-item>
 
-        <el-form-item label="原始描述">
+        <el-form-item label="Original Description">
           <el-input v-model="form.description" type="textarea" :rows="3" />
         </el-form-item>
 
-        <el-form-item label="是否启用">
+        <el-form-item label="Enabled">
           <el-tooltip
             :disabled="hasExecutableCode(form.ruleCode)"
-            content="该规则未生成执行代码，无法启用"
+            content="Compile the rule before enabling it."
             placement="top"
           >
             <span class="switch-wrapper">
               <el-switch
                 v-model="form.enabled"
+                active-color="#16a34a"
+                inactive-color="#64748b"
                 :disabled="!hasExecutableCode(form.ruleCode)"
               />
             </span>
           </el-tooltip>
         </el-form-item>
 
-        <el-form-item label="规则代码 (Python)">
+        <el-form-item label="Rule Code (Python)">
           <el-input
             v-model="form.ruleCode"
             type="textarea"
@@ -466,8 +476,8 @@ onMounted(fetchData);
       </el-form>
 
       <template #footer>
-        <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="save">保存</el-button>
+        <el-button @click="dialogVisible = false">Cancel</el-button>
+        <el-button type="primary" @click="save">Save</el-button>
       </template>
     </el-dialog>
   </div>
@@ -538,6 +548,19 @@ onMounted(fetchData);
 
 .switch-wrapper {
   display: inline-flex;
+}
+
+:deep(.el-switch.is-disabled) {
+  opacity: 0.85;
+}
+
+:deep(.el-switch.is-disabled .el-switch__core) {
+  border-color: #475569;
+  background-color: #64748b;
+}
+
+:deep(.el-switch.is-disabled .el-switch__inner .is-text) {
+  color: #f8fafc;
 }
 
 .detail-table :deep(.el-descriptions__label) {

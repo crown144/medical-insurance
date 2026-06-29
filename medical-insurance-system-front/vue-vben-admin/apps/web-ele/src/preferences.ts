@@ -8,7 +8,7 @@ export const overridesPreferences = defineOverridesPreferences({
   app: {
     // 左上角标题：建议给一个更短的（更像业务系统）
     // 如果你一定要用 env，也可以换成 import.meta.env.VITE_APP_TITLE
-    name: '医保控费',
+    name: 'RuleFlow',
 
     // 登录后默认进入任务列表（你之前已把 mock 的 homePath 也改了，这里再兜底一次）
     defaultAvatar: '',

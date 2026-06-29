@@ -8,7 +8,7 @@ const violation: RouteRecordRaw = {
   component: BasicLayout,
   redirect: '/violation/list',
   meta: {
-    title: '医保违规展示',
+    title: 'Violation Review',
     icon: 'mdi:alert-circle-outline',
     orderNo: 30,
   },
@@ -18,7 +18,7 @@ const violation: RouteRecordRaw = {
       name: 'ViolationList',
       component: () => import('#/views/mi/Placeholder.vue'),
       meta: {
-        title: '违规项目展示',
+        title: 'Violation Items',
         icon: 'mdi:clipboard-text-search-outline',
       },
     },
@@ -26,13 +26,13 @@ const violation: RouteRecordRaw = {
       path: 'review',
       name: 'ViolationReview',
       component: () => import('#/views/mi/Placeholder.vue'),
-      meta: { title: '病历复核与高亮', icon: 'mdi:marker-check' },
+      meta: { title: 'Chart Review and Highlighting', icon: 'mdi:marker-check' },
     },
     {
       path: 'confirm',
       name: 'ViolationConfirm',
       component: () => import('#/views/mi/Placeholder.vue'),
-      meta: { title: '违规信息确认', icon: 'mdi:check-decagram-outline' },
+      meta: { title: 'Violation Confirmation', icon: 'mdi:check-decagram-outline' },
     },
   ],
 };

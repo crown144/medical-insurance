@@ -12,6 +12,7 @@ import {
   DEMO_MODE_NOTICE_EN,
   DEMO_MODE_NOTICE_ZH,
 } from '../../config/demo';
+import { getRuleTypeLabel } from '../../config/rule-type';
 
 // 👇👇👇 重点修改这里 👇👇👇
 // 1. 导入枚举 (Value)
@@ -51,21 +52,21 @@ const currentTaskDetail = ref<Partial<TaskItemDisplay>>({});
 let pollingInterval: null | number = null;
 
 const taskStatusOptions = [
-  { value: 'pending', label: '待处理' },
-  { value: 'running', label: '处理中' },
-  { value: 'completed', label: '已完成' },
-  { value: 'failed', label: '失败' },
+  { value: 'pending', label: 'Pending' },
+  { value: 'running', label: 'Running' },
+  { value: 'completed', label: 'Completed' },
+  { value: 'failed', label: 'Failed' },
 ];
 
 // --- Helpers ---
 
 function formatStatus(status?: string) {
-  if (!status) return '未知';
+  if (!status) return 'Unknown';
   const map: Record<string, string> = {
-    pending: '等待检测',
-    running: '正在检测',
-    completed: '检测完成',
-    failed: '检测失败',
+    pending: 'Pending',
+    running: 'Running',
+    completed: 'Completed',
+    failed: 'Failed',
   };
   return map[status] || status;
 }
@@ -81,7 +82,7 @@ function getStatusClass(status: string) {
 }
 
 function getActionButtonText(status: string) {
-  return status === 'completed' || status === 'failed' ? '结果' : '执行';
+  return status === 'completed' || status === 'failed' ? 'Results' : 'Run';
 }
 
 function calcProgress(status: string) {
@@ -92,6 +93,10 @@ function calcProgress(status: string) {
     pending: 0,
   };
   return map[status] || 0;
+}
+
+function formatSchemas(schemas?: string[]) {
+  return (schemas || []).map((schema) => getRuleTypeLabel(schema));
 }
 
 // --- API Interactions ---
@@ -154,7 +159,7 @@ const handleSearch = () => {
 // src/views/task/TaskExecution.vue
 
 const executeTask = async (task: TaskItemDisplay) => {
-  if (task.status === 'running') return ElMessage.warning('任务正在运行中');
+  if (task.status === 'running') return ElMessage.warning('This task is already running.');
 
   // 🔴 修复这里：当状态是 完成/失败 时，点击按钮跳转到新的结果页
   if (task.status === 'completed' || task.status === 'failed') {
@@ -172,7 +177,7 @@ const executeTask = async (task: TaskItemDisplay) => {
   // 下面是执行逻辑，保持不变
   try {
     await executeTaskApi(task.id);
-    ElMessage.success(`任务 "${task.name}" 已开始执行`);
+    ElMessage.success(`Task "${task.name}" has started.`);
     loadTasks();
   } catch {
     // Error handled by global interceptor usually
@@ -180,11 +185,11 @@ const executeTask = async (task: TaskItemDisplay) => {
 };
 const deleteTask = async (task: TaskItemDisplay) => {
   try {
-    await ElMessageBox.confirm(`确定要删除任务 “${task.name}” 吗？`, '警告', {
+    await ElMessageBox.confirm(`Delete task "${task.name}"?`, 'Warning', {
       type: 'warning',
     });
     await deleteTaskApi(task.id);
-    ElMessage.success('任务删除成功');
+    ElMessage.success('Task deleted successfully.');
     loadTasks();
   } catch (error) {
     if (error !== 'cancel') console.error(error);
@@ -203,19 +208,19 @@ const viewTaskDetail = (task: TaskItemDisplay) => {
 };
 
 const downloadReport = (task: TaskItemDisplay) => {
-  ElMessageBox.prompt('请输入报告期数（例如：3）', '生成报告', {
-    confirmButtonText: '确定',
-    cancelButtonText: '取消',
+  ElMessageBox.prompt('Enter the report period number (for example: 3)', 'Generate Report', {
+    confirmButtonText: 'Confirm',
+    cancelButtonText: 'Cancel',
     inputPattern: /^\d+$/,
-    inputErrorMessage: '期数必须为数字',
+    inputErrorMessage: 'The report period must be a number.',
   })
     .then(({ value }) => {
       const url = getDownloadUrl(task.id, value);
       window.open(url, '_blank');
-      ElMessage.success('报告生成请求已发送，请等待下载...');
+      ElMessage.success('Report generation requested. Please wait for the download.');
     })
     .catch(() => {
-      ElMessage.info('已取消生成报告');
+      ElMessage.info('Report generation cancelled.');
     });
 };
 
@@ -257,8 +262,8 @@ onUnmounted(() => {
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">任务计算</div>
-          <div class="title-sub">医保病例检测任务管理与执行</div>
+          <div class="title-main">Task Execution</div>
+          <div class="title-sub">Manage and run medical audit tasks</div>
         </div>
       </div>
 
@@ -279,28 +284,28 @@ onUnmounted(() => {
         <div class="query-row">
           <div class="query-left">
             <div class="query-item">
-              <div class="query-label">任务ID</div>
+              <div class="query-label">Task ID</div>
               <el-input
                 v-model="searchForm.id"
-                placeholder="输入任务ID"
+                placeholder="Enter task ID"
                 clearable
               />
             </div>
 
             <div class="query-item">
-              <div class="query-label">任务名称</div>
+              <div class="query-label">Task Name</div>
               <el-input
                 v-model="searchForm.search"
-                placeholder="输入任务名称"
+                placeholder="Enter task name"
                 clearable
               />
             </div>
 
             <div class="query-item">
-              <div class="query-label">任务状态</div>
+              <div class="query-label">Task Status</div>
               <el-select
                 v-model="searchForm.status"
-                placeholder="请选择状态"
+                placeholder="Select status"
                 clearable
                 style="width: 180px"
               >
@@ -314,20 +319,20 @@ onUnmounted(() => {
             </div>
 
             <div class="query-actions">
-              <el-button type="primary" @click="handleSearch">查询</el-button>
-              <el-button @click="resetSearch">重置</el-button>
+              <el-button type="primary" @click="handleSearch">Search</el-button>
+              <el-button @click="resetSearch">Reset</el-button>
             </div>
           </div>
 
           <div class="query-right">
             <el-button type="success" class="create-btn" @click="goToAddTask">
-              + 创建计算任务
+              + New Task
             </el-button>
           </div>
         </div>
       </div>
 
-      <div class="list-title">任务列表</div>
+      <div class="list-title">Task List</div>
 
       <div class="table-card">
         <el-table
@@ -339,34 +344,34 @@ onUnmounted(() => {
         >
           <el-table-column
             prop="id"
-            label="任务ID"
+            label="Task ID"
             width="100"
             align="center"
           />
-          <el-table-column prop="name" label="任务名称" min-width="220" />
+          <el-table-column prop="name" label="Task Name" min-width="220" />
 
-          <el-table-column label="审查范围" width="140" align="center">
+          <el-table-column label="Case Scope" width="140" align="center">
             <template #default="{ row }">
-              共 {{ row.hospitalization_ids?.length || 0 }} 例
+              {{ row.hospitalization_ids?.length || 0 }} cases
             </template>
           </el-table-column>
 
-          <el-table-column label="检测方案" min-width="220">
+          <el-table-column label="Detection Schemes" min-width="220">
             <template #default="{ row }">
               <el-tag
-                v-for="s in row.selectedSchemas"
+                v-for="s in formatSchemas(row.selectedSchemas)"
                 :key="s"
                 class="scheme-tag"
               >
                 {{ s }}
               </el-tag>
-              <span v-if="!row.selectedSchemas?.length" class="muted">无</span>
+              <span v-if="!row.selectedSchemas?.length" class="muted">None</span>
             </template>
           </el-table-column>
 
           <el-table-column
             prop="status"
-            label="任务状态"
+            label="Status"
             width="140"
             align="center"
           >
@@ -378,7 +383,7 @@ onUnmounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="进度" width="180" align="center">
+          <el-table-column label="Progress" width="180" align="center">
             <template #default="{ row }">
               <el-progress
                 :percentage="calcProgress(row.status)"
@@ -395,7 +400,7 @@ onUnmounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="操作" width="260" align="center">
+          <el-table-column label="Actions" width="260" align="center">
             <template #default="{ row }">
               <div class="op-cell">
                 <div class="op-line">
@@ -419,7 +424,7 @@ onUnmounted(() => {
                     class="op-btn"
                     @click="viewTaskDetail(row)"
                   >
-                    详情
+                    Details
                   </el-button>
 
                   <template
@@ -433,7 +438,7 @@ onUnmounted(() => {
                       class="op-btn"
                       @click="downloadReport(row)"
                     >
-                      下载报告
+                      Download Report
                     </el-button>
                   </template>
                 </div>
@@ -446,7 +451,7 @@ onUnmounted(() => {
                     class="op-btn op-btn--danger"
                     @click="deleteTask(row)"
                   >
-                    删除
+                    Delete
                   </el-button>
                 </div>
               </div>
@@ -454,7 +459,7 @@ onUnmounted(() => {
           </el-table-column>
 
           <template #empty>
-            <el-empty description="暂无数据" />
+            <el-empty description="No data available." />
           </template>
         </el-table>
 
@@ -472,7 +477,7 @@ onUnmounted(() => {
 
     <el-dialog
       v-model="taskDetailVisible"
-      title="任务详情"
+      title="Task Details"
       width="700px"
       destroy-on-close
     >
@@ -496,7 +501,7 @@ onUnmounted(() => {
           </div>
           <div class="header-info">
             <div class="header-title">{{ currentTaskDetail.name }}</div>
-            <div class="header-id">任务ID: {{ currentTaskDetail.id }}</div>
+            <div class="header-id">Task ID: {{ currentTaskDetail.id }}</div>
           </div>
           <div class="header-status">
             <el-tag
@@ -509,12 +514,12 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <el-divider content-position="left">基础信息</el-divider>
+        <el-divider content-position="left">Basic Information</el-divider>
 
         <el-descriptions :column="2" border>
-          <el-descriptions-item label="检测方案">
+          <el-descriptions-item label="Detection Schemes">
             <el-tag
-              v-for="s in currentTaskDetail.selectedSchemas"
+              v-for="s in formatSchemas(currentTaskDetail.selectedSchemas)"
               :key="s"
               class="mr-2"
               size="small"
@@ -522,10 +527,10 @@ onUnmounted(() => {
               {{ s }}
             </el-tag>
           </el-descriptions-item>
-          <el-descriptions-item label="任务摘要">
-            {{ currentTaskDetail.summary || '无' }}
+          <el-descriptions-item label="Task Summary">
+            {{ currentTaskDetail.summary || 'None' }}
           </el-descriptions-item>
-          <el-descriptions-item label="住院号列表" :span="2">
+          <el-descriptions-item label="Hospitalization IDs" :span="2">
             <div class="id-list">
               <el-tag
                 v-for="id in currentTaskDetail.hospitalization_ids"
@@ -540,7 +545,7 @@ onUnmounted(() => {
           </el-descriptions-item>
         </el-descriptions>
 
-        <el-divider content-position="left">执行时间</el-divider>
+        <el-divider content-position="left">Execution Timeline</el-divider>
 
         <div class="time-timeline">
           <el-steps
@@ -549,7 +554,7 @@ onUnmounted(() => {
             finish-status="success"
           >
             <el-step
-              title="创建"
+              title="Created"
               :description="
                 currentTaskDetail.created_at
                   ? new Date(currentTaskDetail.created_at).toLocaleString()
@@ -557,19 +562,19 @@ onUnmounted(() => {
               "
             />
             <el-step
-              title="开始"
+              title="Started"
               :description="
                 currentTaskDetail.started_at
                   ? new Date(currentTaskDetail.started_at).toLocaleString()
-                  : '等待中'
+                  : 'Waiting'
               "
             />
             <el-step
-              title="结束"
+              title="Finished"
               :description="
                 currentTaskDetail.completed_at
                   ? new Date(currentTaskDetail.completed_at).toLocaleString()
-                  : '计算中'
+                  : 'In Progress'
               "
             />
           </el-steps>

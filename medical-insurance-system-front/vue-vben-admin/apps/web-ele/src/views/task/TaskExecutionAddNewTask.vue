@@ -33,7 +33,7 @@ import {
   getRuleListApi,
   searchInhosApi,
 } from '../../api/task';
-import { DEMO_MODE, DEMO_MODE_NOTICE_ZH } from '../../config/demo';
+import { DEMO_MODE } from '../../config/demo';
 // import RepeatChargingRuleSelector from '../../components/RepeatChargingRuleSelector.vue'; // 已废弃
 
 // --- 数据接口 ---
@@ -292,8 +292,8 @@ const loadDemoCases = async () => {
   try {
     demoCases.value = await getDemoCaseListApi();
   } catch (error) {
-    console.error('加载模拟病例失败', error);
-    ElMessage.error('加载模拟病例失败');
+    console.error('Failed to load demo cases', error);
+    ElMessage.error('Failed to load demo cases.');
   } finally {
     isLoadingDemoCases.value = false;
   }
@@ -303,11 +303,11 @@ onMounted(loadDemoCases);
 
 const searchInhosNumbers = async () => {
   if (!form.value.mdc_org_cd.trim()) {
-    ElMessage.warning('请输入医疗机构代码');
+    ElMessage.warning('Please enter the medical institution code.');
     return;
   }
   if (!form.value.discharge_date_start && !form.value.drug_name.trim()) {
-    ElMessage.warning('请至少选择日期或输入药品名称进行筛选');
+    ElMessage.warning('Please select a date or enter a drug name to filter.');
     return;
   }
   isLoadingInhos.value = true;
@@ -327,13 +327,13 @@ const searchInhosNumbers = async () => {
     inhosSearchLimit.value = res.limit;
 
     if (inhosSearchResults.value.length === 0) {
-      ElMessage.info('未找到匹配的住院号');
+      ElMessage.info('No matching hospitalization IDs were found.');
     } else if (res.truncated) {
       ElMessage.warning(
-        res.warning || `仅返回前 ${res.limit} 条，请缩小查询范围`,
+        res.warning || `Only the first ${res.limit} records were returned. Please narrow the search scope.`,
       );
     } else {
-      ElMessage.success(`返回 ${res.count} 个住院号`);
+      ElMessage.success(`${res.count} hospitalization IDs returned.`);
     }
   } catch (error) {
     console.error(error);
@@ -353,7 +353,7 @@ const selectAllInhosNumbers = () => {
     (inhosNo) => !form.value.hospitalization_ids.includes(inhosNo),
   );
   form.value.hospitalization_ids.push(...newNumbers);
-  ElMessage.success(`已添加 ${newNumbers.length} 个住院号`);
+  ElMessage.success(`${newNumbers.length} hospitalization IDs added.`);
 };
 
 const resetFilter = () => {
@@ -400,11 +400,15 @@ const formatDemoCaseLabel = (item: DemoCaseItem) => {
 };
 
 const createTask = async () => {
-  if (!form.value.name.trim()) return ElMessage.warning('请输入任务名称');
+  if (!form.value.name.trim()) return ElMessage.warning('Please enter a task name.');
   if (!DEMO_MODE && !form.value.mdc_org_cd.trim())
-    return ElMessage.warning('请输入医疗机构代码');
+    return ElMessage.warning('Please enter the medical institution code.');
   if (form.value.hospitalization_ids.length === 0)
-    return ElMessage.warning(DEMO_MODE ? '请至少选择一个模拟病例' : '请输入至少一个住院号');
+    return ElMessage.warning(
+      DEMO_MODE
+        ? 'Please select at least one demo case.'
+        : 'Please enter at least one hospitalization ID.',
+    );
 
   // 简化的校验逻辑...
   const selectedSchemas: string[] = [];
@@ -415,7 +419,7 @@ const createTask = async () => {
   if (detectionSchemes.value.overMedical) selectedSchemas.push('过度医疗');
 
   if (selectedSchemas.length === 0)
-    return ElMessage.warning('请至少选择一个检测方案');
+    return ElMessage.warning('Please select at least one detection scheme.');
 
   isCreatingTask.value = true;
   try {
@@ -447,7 +451,7 @@ const createTask = async () => {
       repeatChargingPairs: [],
     };
     await createTaskApi(payload);
-    ElMessage.success('任务创建成功');
+    ElMessage.success('Task created successfully.');
     router.back();
   } catch (error) {
     console.error(error);
@@ -465,46 +469,46 @@ const goBack = () => router.back();
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">新增任务</div>
-          <div class="title-sub">填写任务信息，配置审核范围与规则</div>
+          <div class="title-main">New Task</div>
+          <div class="title-sub">Enter task information and configure case scope and rules</div>
         </div>
         <div class="header-actions">
-          <ElButton @click="goBack">取消</ElButton>
+          <ElButton @click="goBack">Cancel</ElButton>
           <ElButton
             type="primary"
             :loading="isCreatingTask"
             @click="createTask"
           >
-            提交任务
+            Submit Task
           </ElButton>
         </div>
       </div>
 
       <ElAlert
         v-if="DEMO_MODE"
-        :title="DEMO_MODE_NOTICE_ZH"
+        title="This demo environment uses preloaded anonymized patient cases and does not connect to the production medical database."
         type="info"
         show-icon
         :closable="false"
         class="mb-4"
       />
 
-      <div class="section-title">1. 基础信息</div>
+      <div class="section-title">1. Basic Information</div>
       <div class="query-card">
         <div class="form-row">
           <div class="query-item" style="width: 400px">
             <div class="query-label">
-              任务名称 <span class="required">*</span>
+              Task Name <span class="required">*</span>
             </div>
             <ElInput
               v-model="form.name"
-              placeholder="例如：2025年第一季度超限定用药审核"
+              placeholder="For example: Q1 2025 over-limit medication audit"
               size="large"
             />
           </div>
           <div class="query-item" style="width: 220px">
             <div class="query-label">
-              医疗机构代码 <span class="required">*</span>
+              Medical Institution Code <span class="required">*</span>
             </div>
             <ElInput
               v-model="form.mdc_org_cd"
@@ -517,14 +521,14 @@ const goBack = () => router.back();
       </div>
 
       <div class="section-title">
-        2. {{ DEMO_MODE ? '模拟病例选择' : '审核病例范围' }}
-        <span class="section-badge">已选 {{ form.hospitalization_ids.length }} 例</span>
+        2. {{ DEMO_MODE ? 'Demo Case Selection' : 'Audit Case Scope' }}
+        <span class="section-badge">{{ form.hospitalization_ids.length }} selected</span>
       </div>
 
       <div class="query-card">
         <div v-if="DEMO_MODE" class="query-item demo-case-select">
           <div class="query-label">
-            模拟病例选择 <span class="required">*</span>
+            Demo Case Selection <span class="required">*</span>
           </div>
           <ElSelect
             v-model="form.hospitalization_ids"
@@ -533,7 +537,7 @@ const goBack = () => router.back();
             clearable
             collapse-tags
             collapse-tags-tooltip
-            placeholder="请选择一个或多个预置病例进行审核"
+            placeholder="Select one or more preloaded cases for audit"
             :loading="isLoadingDemoCases"
             style="width: 100%"
           >
@@ -544,18 +548,18 @@ const goBack = () => router.back();
               :value="item.hospitalization_id"
             />
           </ElSelect>
-          <div class="demo-case-hint">请选择一个或多个预置病例进行审核</div>
+          <div class="demo-case-hint">Select one or more preloaded cases for audit.</div>
         </div>
 
         <div v-if="!DEMO_MODE" class="query-row">
           <div class="query-left">
             <div class="query-item">
-              <div class="query-label">出院日期范围</div>
+              <div class="query-label">Discharge Date Range</div>
               <div class="flex gap-2">
                 <ElDatePicker
                   v-model="form.discharge_date_start"
                   type="month"
-                  placeholder="开始月份"
+                  placeholder="Start month"
                   value-format="YYYY-MM"
                   style="width: 140px"
                 />
@@ -563,7 +567,7 @@ const goBack = () => router.back();
                 <ElDatePicker
                   v-model="form.discharge_date_end"
                   type="month"
-                  placeholder="结束月份"
+                  placeholder="End month"
                   value-format="YYYY-MM"
                   style="width: 140px"
                 />
@@ -571,10 +575,10 @@ const goBack = () => router.back();
             </div>
 
             <div class="query-item">
-              <div class="query-label">药品名称</div>
+              <div class="query-label">Drug Name</div>
               <ElInput
                 v-model="form.drug_name"
-                placeholder="输入药品名称筛选"
+                placeholder="Enter a drug name to filter"
                 style="width: 200px"
                 clearable
                 @keyup.enter="searchInhosNumbers"
@@ -588,9 +592,9 @@ const goBack = () => router.back();
                 :loading="isLoadingInhos"
                 @click="searchInhosNumbers"
               >
-                查询
+                Search
               </ElButton>
-              <ElButton :icon="Refresh" @click="resetFilter">重置</ElButton>
+              <ElButton :icon="Refresh" @click="resetFilter">Reset</ElButton>
             </div>
           </div>
         </div>
@@ -607,9 +611,9 @@ const goBack = () => router.back();
         <div v-if="!DEMO_MODE && inhosSearchResults.length > 0" class="result-area">
           <div class="area-header">
             <span>
-              查询结果 ({{ inhosSearchResults.length }})
+              Search Results ({{ inhosSearchResults.length }})
               <template v-if="inhosSearchWarning">
-                ，单次上限 {{ inhosSearchLimit }} 条
+                , limited to {{ inhosSearchLimit }} items per request
               </template>
             </span>
             <ElButton
@@ -618,7 +622,7 @@ const goBack = () => router.back();
               size="small"
               @click="selectAllInhosNumbers"
             >
-              全部添加
+              Add All
             </ElButton>
           </div>
           <div class="tag-scroller">
@@ -637,7 +641,7 @@ const goBack = () => router.back();
 
         <div class="selected-area">
           <div class="area-header">
-            <span>{{ DEMO_MODE ? '已选模拟病例' : '已选病例池' }}</span>
+            <span>{{ DEMO_MODE ? 'Selected Demo Cases' : 'Selected Case Pool' }}</span>
             <ElButton
               v-if="form.hospitalization_ids.length > 0"
               type="danger"
@@ -645,7 +649,7 @@ const goBack = () => router.back();
               :icon="Delete"
               @click="clearSelectedInhos"
             >
-              清空
+              Clear
             </ElButton>
           </div>
 
@@ -676,47 +680,47 @@ const goBack = () => router.back();
                 class="dashed-btn"
                 @click="showCaseInput"
               >
-                + 手动添加
+                + Add Manually
               </ElButton>
             </div>
           </div>
           <ElEmpty
             v-if="form.hospitalization_ids.length === 0"
             :image-size="40"
-            description="暂无选择的病例"
+            description="No cases selected."
             class="mini-empty"
           />
         </div>
       </div>
 
-      <div class="section-title">3. 审核规则配置</div>
+      <div class="section-title">3. Audit Rule Configuration</div>
       <div class="query-card">
         <div class="scheme-select-row">
-          <div class="query-label mb-2">检测方案选择</div>
+          <div class="query-label mb-2">Detection Scheme Selection</div>
           <div class="checkbox-group-styled">
             <ElCheckbox
               v-model="detectionSchemes.overLimit"
-              label="超限定用药"
+              label="Restricted Medication"
               border
             />
             <ElCheckbox
               v-model="detectionSchemes.overStandard"
-              label="超标准收费"
+              label="Over-standard Charge"
               border
             />
             <ElCheckbox
               v-model="detectionSchemes.repeatCharging"
-              label="重复收费"
+              label="Duplicate Charge"
               border
             />
             <ElCheckbox
               v-model="detectionSchemes.overFrequency"
-              label="超频次收费"
+              label="Excessive Frequency"
               border
             />
             <ElCheckbox
               v-model="detectionSchemes.overMedical"
-              label="过度医疗"
+              label="Overutilization"
               border
             />
           </div>
@@ -726,14 +730,14 @@ const goBack = () => router.back();
           <div v-if="detectionSchemes.overLimit" class="rule-table-container">
             <div class="rule-header">
               <span class="sub-title"
-                >配置“超限定用药”规则
+                >Configure Restricted Medication Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >已选 {{ form.selected_rule_ids.length }} 条</span
+                  >{{ form.selected_rule_ids.length }} selected</span
                 ></span
               >
               <ElInput
                 v-model="ruleSearchQuery"
-                placeholder="搜索规则名称..."
+                placeholder="Search rule names..."
                 :prefix-icon="Search"
                 style="width: 250px"
                 size="small"
@@ -756,8 +760,8 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
-                <ElTableColumn prop="drug_name" label="药品名称" width="180">
+                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
                       row.drug_name
@@ -766,7 +770,7 @@ const goBack = () => router.back();
                 </ElTableColumn>
                 <ElTableColumn
                   prop="description"
-                  label="规则描述"
+                  label="Description"
                   show-overflow-tooltip
                 />
               </ElTable>
@@ -781,14 +785,14 @@ const goBack = () => router.back();
           >
             <div class="rule-header">
               <span class="sub-title"
-                >配置“重复收费”规则
+                >Configure Duplicate Charge Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >已选 {{ selectedRepeatRuleIds.length }} 条</span
+                  >{{ selectedRepeatRuleIds.length }} selected</span
                 ></span
               >
               <ElInput
                 v-model="repeatRuleSearchQuery"
-                placeholder="搜索规则名称..."
+                placeholder="Search rule names..."
                 :prefix-icon="Search"
                 style="width: 250px"
                 size="small"
@@ -811,8 +815,8 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
-                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
                       row.drug_name
@@ -821,7 +825,7 @@ const goBack = () => router.back();
                 </ElTableColumn>
                 <ElTableColumn
                   prop="description"
-                  label="规则描述"
+                  label="Description"
                   show-overflow-tooltip
                 />
               </ElTable>
@@ -836,14 +840,14 @@ const goBack = () => router.back();
           >
             <div class="rule-header">
               <span class="sub-title"
-                >配置“超标准收费”规则
+                >Configure Over-standard Charge Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >已选 {{ selectedOverStandardRuleIds.length }} 条</span
+                  >{{ selectedOverStandardRuleIds.length }} selected</span
                 ></span
               >
               <ElInput
                 v-model="overStandardRuleSearchQuery"
-                placeholder="搜索规则名称..."
+                placeholder="Search rule names..."
                 :prefix-icon="Search"
                 style="width: 250px"
                 size="small"
@@ -866,8 +870,8 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
-                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
                       row.drug_name
@@ -876,7 +880,7 @@ const goBack = () => router.back();
                 </ElTableColumn>
                 <ElTableColumn
                   prop="description"
-                  label="规则描述"
+                  label="Description"
                   show-overflow-tooltip
                 />
               </ElTable>
@@ -891,14 +895,14 @@ const goBack = () => router.back();
           >
             <div class="rule-header">
               <span class="sub-title"
-                >配置“超频次收费”规则
+                >Configure Excessive Frequency Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >已选 {{ selectedOverFrequencyRuleIds.length }} 条</span
+                  >{{ selectedOverFrequencyRuleIds.length }} selected</span
                 ></span
               >
               <ElInput
                 v-model="overFrequencyRuleSearchQuery"
-                placeholder="搜索规则名称..."
+                placeholder="Search rule names..."
                 :prefix-icon="Search"
                 style="width: 250px"
                 size="small"
@@ -921,8 +925,8 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
-                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
                       row.drug_name
@@ -931,7 +935,7 @@ const goBack = () => router.back();
                 </ElTableColumn>
                 <ElTableColumn
                   prop="description"
-                  label="规则描述"
+                  label="Description"
                   show-overflow-tooltip
                 />
               </ElTable>
@@ -946,14 +950,14 @@ const goBack = () => router.back();
           >
             <div class="rule-header">
               <span class="sub-title"
-                >配置“过度医疗”规则
+                >Configure Overutilization Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >已选 {{ selectedOverMedicalRuleIds.length }} 条</span
+                  >{{ selectedOverMedicalRuleIds.length }} selected</span
                 ></span
               >
               <ElInput
                 v-model="overMedicalRuleSearchQuery"
-                placeholder="搜索规则名称..."
+                placeholder="Search rule names..."
                 :prefix-icon="Search"
                 style="width: 250px"
                 size="small"
@@ -976,8 +980,8 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
-                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
                       row.drug_name
@@ -986,7 +990,7 @@ const goBack = () => router.back();
                 </ElTableColumn>
                 <ElTableColumn
                   prop="description"
-                  label="规则描述"
+                  label="Description"
                   show-overflow-tooltip
                 />
               </ElTable>

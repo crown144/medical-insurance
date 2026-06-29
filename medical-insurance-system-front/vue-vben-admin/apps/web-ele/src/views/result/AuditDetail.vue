@@ -90,7 +90,7 @@ const loadPageData = async () => {
   hospitalizationId.value = String(route.query.hospitalizationId || '');
 
   if (!taskId.value || !hospitalizationId.value) {
-    error.value = '参数缺失';
+    error.value = 'Missing required parameters.';
     isLoading.value = false;
     return;
   }
@@ -142,8 +142,8 @@ const loadPageData = async () => {
       jsonLines.value = Object.freeze(jsonStr.split('\n'));
     } else {
       jsonLines.value = Object.freeze([
-        `// 暂无病历数据或加载失败`,
-        `// 请检查后端服务`,
+        `// No medical record data is available or loading failed.`,
+        `// Please check the backend service.`,
       ]);
     }
   } catch (error_: any) {
@@ -231,7 +231,7 @@ const visibleData = computed(() => {
   // 🟢 新增：同时高亮违规项目名称
   if (selectedViolation.value) {
     const violationName = getViolationName(selectedViolation.value);
-    if (violationName && violationName !== '未知项目') {
+    if (violationName && violationName !== 'Unknown Item') {
        // 处理包含引号的组合名称，例如：“静脉注射”与“静脉采血”不能同时开
        // 提取出引号内的内容作为高亮关键词
        const matches = violationName.match(/[“"']([^”"']+)["”']/g);
@@ -316,7 +316,7 @@ const jumpToNextHighlight = () => {
 
   // B. 违规项目名称（支持自动提取引号内容）
   const violationName = getViolationName(selectedViolation.value);
-  if (violationName && violationName !== '未知项目') {
+  if (violationName && violationName !== 'Unknown Item') {
     const matches = violationName.match(/[“"']([^”"']+)["”']/g);
     if (matches && matches.length > 0) {
       matches.forEach((m) => {
@@ -336,7 +336,7 @@ const jumpToNextHighlight = () => {
   const targets = Array.from(targetSet).filter(Boolean);
 
   if (targets.length === 0) {
-    ElMessage.info('当前条目无高亮关键词');
+    ElMessage.info('No highlight keywords are available for the current item.');
     return;
   }
 
@@ -395,13 +395,13 @@ const jumpToNextHighlight = () => {
 
     // 给用户一个反馈
     ElMessage({
-      message: `已定位到第 ${foundIndex + 1} 行`,
+      message: `Jumped to line ${foundIndex + 1}.`,
       type: 'success',
       duration: 1500,
       icon: Search,
     });
   } else {
-    ElMessage.warning('全文中未找到匹配的高亮文本');
+    ElMessage.warning('No matching highlighted text was found in the record.');
   }
 };
 
@@ -439,7 +439,7 @@ const patientSummary = computed(() => {
   const p = d.patient || {};
   const v = d.visit || {};
   return {
-    name: p.name || '未知',
+    name: p.name || 'Unknown',
     sex: p.sex || '-',
     age: p.age || '-',
     dept: v.department || '-',
@@ -447,7 +447,7 @@ const patientSummary = computed(() => {
   };
 });
 
-const formatRuleType = (t?: string) => t || '规则';
+const formatRuleType = (t?: string) => t || 'Rule';
 
 const getViolationName = (v: ViolationItem) => {
   // 1. 尝试从 violation_item (这里假设后端API如果包含了它，需要添加到 ViolationItem 接口定义) 获取
@@ -468,7 +468,7 @@ const getViolationName = (v: ViolationItem) => {
     } catch {}
   }
 
-  return parsedName || v.rule?.drugName || '未知项目';
+  return parsedName || v.rule?.drugName || 'Unknown Item';
 };
 </script>
 
@@ -479,17 +479,17 @@ const getViolationName = (v: ViolationItem) => {
         <div class="title-left">
           <div class="title-bar"></div>
           <div class="title-text">
-            <h1 class="page-title">结果审计详情</h1>
+            <h1 class="page-title">Audit Result Detail</h1>
             <div class="sub-info">
-              <span class="sub-item">任务: {{ taskId }}</span>
+              <span class="sub-item">Task: {{ taskId }}</span>
               <span class="dot">•</span>
-              <span class="sub-item">住院号: {{ hospitalizationId }}</span>
+              <span class="sub-item">Hospitalization ID: {{ hospitalizationId }}</span>
             </div>
           </div>
         </div>
         <div class="header-actions">
           <ElButton @click="goBack" class="back-btn">
-            <ElIcon class="el-icon--left"><ArrowLeft /></ElIcon>返回列表
+            <ElIcon class="el-icon--left"><ArrowLeft /></ElIcon>Back to List
           </ElButton>
         </div>
       </div>
@@ -526,7 +526,7 @@ const getViolationName = (v: ViolationItem) => {
         <div class="panel list-panel">
           <div class="panel-header">
             <div class="panel-title">
-              <ElIcon class="mr-1"><Warning /></ElIcon> 违规条目
+              <ElIcon class="mr-1"><Warning /></ElIcon> Violation Items
             </div>
             <div class="panel-badge">{{ allViolationsInCase.length }}</div>
           </div>
@@ -550,7 +550,7 @@ const getViolationName = (v: ViolationItem) => {
               </div>
               <div class="desc-text">{{ v.rule?.description }}</div>
               <div class="reason-box">
-                <div class="reason-title">判定原因：</div>
+                <div class="reason-title">Reason:</div>
                 <div class="reason-content">{{ v.reason }}</div>
               </div>
               <div
@@ -558,14 +558,14 @@ const getViolationName = (v: ViolationItem) => {
                 v-if="v.highlights && v.highlights.length > 0"
               >
                 <div class="evidence-link">
-                  关联证据 {{ v.highlights.length }} 处
+                  {{ v.highlights.length }} related evidence entries
                   <ElIcon><ArrowRight /></ElIcon>
                 </div>
               </div>
             </div>
             <ElEmpty
               v-if="allViolationsInCase.length === 0"
-              description="暂无违规数据"
+              description="No violation data available."
             />
           </div>
         </div>
@@ -573,10 +573,10 @@ const getViolationName = (v: ViolationItem) => {
         <div class="panel preview-panel">
           <div class="panel-header">
             <div class="panel-title">
-              <ElIcon class="mr-1"><Document /></ElIcon> 原始病历全文 ({{
+              <ElIcon class="mr-1"><Document /></ElIcon> Full Medical Record ({{
                 jsonLines.length
               }}
-              行)
+              lines)
             </div>
             <div class="panel-actions">
               <!-- 新增：跳转到高亮按钮 -->
@@ -587,7 +587,7 @@ const getViolationName = (v: ViolationItem) => {
                 @click="jumpToNextHighlight"
                 :disabled="!selectedViolation"
               >
-                跳转到高亮
+                Jump to Highlight
               </ElButton>
             </div>
           </div>

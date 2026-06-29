@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus';
 
 import { baseRequestClient } from '../../api/request';
 import { getTaskResultListApi } from '../../api/result';
+import { getRuleTypeLabel } from '../../config/rule-type';
 
 const route = useRoute();
 const router = useRouter();
@@ -90,7 +91,7 @@ const fetchTableData = async () => {
           finalItemName = item.violation_item;
         } else {
           // 兜底：使用规则中的名称
-          finalItemName = item.rule?.drug_name || '未知项目';
+          finalItemName = item.rule?.drug_name || 'Unknown Item';
         }
       }
 
@@ -100,7 +101,8 @@ const fetchTableData = async () => {
         // 违规项目
         itemName: finalItemName,
         // 违规类型
-        violationType: item.rule?.type || item.rule?.description || '通用规则',
+        violationTypeRaw: item.rule?.type || item.rule?.description || 'General Rule',
+        violationType: getRuleTypeLabel(item.rule?.type || item.rule?.description) || 'General Rule',
         // 违规原因
         reason: item.reason,
         // 时间
@@ -112,7 +114,7 @@ const fetchTableData = async () => {
     });
   } catch (error) {
     console.error('加载失败', error);
-    ElMessage.error('获取违规数据失败');
+    ElMessage.error('Failed to load violation data.');
   } finally {
     isLoading.value = false;
   }
@@ -161,11 +163,11 @@ onMounted(() => {
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">违规明细列表</div>
+          <div class="title-main">Task Result Details</div>
           <div class="title-sub">
-            任务 #{{ taskId }} · {{ taskName }}
+            Task #{{ taskId }} · {{ taskName }}
             <span class="ml-2 text-gray-400"
-              >(共发现 {{ total }} 条违规线索)</span
+              >({{ total }} violation clues found)</span
             >
           </div>
         </div>
@@ -175,10 +177,10 @@ onMounted(() => {
         <el-form :inline="true" :model="filterForm" class="filter-form">
           <el-row :gutter="16" style="width: 100%">
             <el-col :span="6">
-              <el-form-item label="住院号" style="width: 100%; margin-right: 0">
+              <el-form-item label="Hospitalization ID" style="width: 100%; margin-right: 0">
                 <el-input
                   v-model="filterForm.hosId"
-                  placeholder="输入住院号"
+                  placeholder="Enter hospitalization ID"
                   style="width: 100%"
                   clearable
                   @keyup.enter="handleSearch"
@@ -192,9 +194,9 @@ onMounted(() => {
                 @click="handleSearch"
                 :loading="isLoading"
               >
-                查询
+                Search
               </el-button>
-              <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+              <el-button :icon="Refresh" @click="handleReset">Reset</el-button>
             </el-col>
           </el-row>
         </el-form>
@@ -209,10 +211,10 @@ onMounted(() => {
           style="width: 100%"
         >
           <el-table-column type="index" width="50" align="center" label="#" />
-          <el-table-column prop="hosNo" label="住院号" width="180" />
+          <el-table-column prop="hosNo" label="Hospitalization ID" width="180" />
           <el-table-column
             prop="itemName"
-            label="违规项目/药品"
+            label="Violation Item / Drug"
             width="220"
             show-overflow-tooltip
           >
@@ -220,12 +222,12 @@ onMounted(() => {
               <span class="font-bold text-gray-700">{{ row.itemName }}</span>
             </template>
           </el-table-column>
-          <el-table-column prop="violationType" label="违规类型" width="160">
+          <el-table-column prop="violationType" label="Violation Type" width="160">
             <template #default="{ row }">
               <el-tag
                 size="small"
                 :type="
-                  row.violationType.includes('重复') ? 'warning' : 'danger'
+                  row.violationTypeRaw?.includes('重复') ? 'warning' : 'danger'
                 "
                 effect="plain"
               >
@@ -235,12 +237,12 @@ onMounted(() => {
           </el-table-column>
           <el-table-column
             prop="reason"
-            label="违规原因说明"
+            label="Reason"
             min-width="300"
             show-overflow-tooltip
           />
           <el-table-column
-            label="操作"
+            label="Actions"
             width="100"
             align="center"
             fixed="right"
@@ -252,7 +254,7 @@ onMounted(() => {
                 :icon="View"
                 @click="goToAuditDetail(row)"
               >
-                详情
+                Details
               </el-button>
             </template>
           </el-table-column>

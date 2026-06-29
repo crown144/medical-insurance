@@ -36,6 +36,9 @@ def extract_json_from_llm(text):
     text = text.strip()
     text = re.sub(r"```json", "", text)
     text = re.sub(r"```", "", text)
+    if '</think>' in text:
+        text=text.split('</think>')[-1].strip()
+    logger.info(text)
     match = re.search(r"\[\s*.*\s*\]", text, re.S)
     if match:
         try:

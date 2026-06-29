@@ -9,7 +9,7 @@ const task: RouteRecordRaw = {
   name: 'ExecuteCenter',
   component: BasicLayout,
   meta: {
-    title: '医保执行任务',
+    title: 'Task Execution',
     icon: 'mdi:clipboard-text-outline',
     order: 20,
   },
@@ -21,7 +21,7 @@ const task: RouteRecordRaw = {
       name: 'ExecuteManage',
       component: ParentView,
       meta: {
-        title: '计算任务管理',
+        title: 'Task Management',
         icon: 'mdi:format-list-bulleted',
       },
       redirect: '/task/manage/execution',
@@ -31,7 +31,7 @@ const task: RouteRecordRaw = {
           name: 'ExecuteRun',
           component: () => import('#/views/task/TaskExecution.vue'),
           meta: {
-            title: '医保任务执行',
+            title: 'Task Execution',
             icon: 'mdi:play-circle-outline',
             keepAlive: false, //
           },
@@ -41,7 +41,7 @@ const task: RouteRecordRaw = {
           name: 'ExecuteNewTask',
           component: () => import('#/views/task/TaskExecutionAddNewTask.vue'),
           meta: {
-            title: '新建计算任务',
+            title: 'New Task',
             icon: 'mdi:plus-box-outline',
           },
         },
@@ -54,7 +54,7 @@ const task: RouteRecordRaw = {
       name: 'TaskExecutionLegacy',
       redirect: '/task/manage/execution',
       meta: {
-        title: '旧版列表跳转', //
+        title: 'Legacy Task List Redirect', //
         hideInMenu: true,
       },
     },
@@ -63,7 +63,7 @@ const task: RouteRecordRaw = {
       name: 'TaskAddLegacy',
       redirect: '/task/manage/new',
       meta: {
-        title: '旧版新建跳转', //
+        title: 'Legacy New Task Redirect', //
         hideInMenu: true,
       },
     },

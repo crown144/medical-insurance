@@ -10,6 +10,7 @@ import { ElMessage } from 'element-plus';
 
 // 引入 API
 import { getDownloadUrl, getTaskListApi } from '../../api/task';
+import { formatRuleTypeList } from '../../config/rule-type';
 
 const router = useRouter();
 
@@ -46,9 +47,9 @@ const fetchTaskList = async () => {
       id: item.id,
       name: item.name,
       // 范围：后端暂时没返回具体的病例数，先用 hospitalization_ids 长度代替
-      scope: `共 ${item.hospitalization_ids?.length || 0} 例`,
+      scope: `${item.hospitalization_ids?.length || 0} cases`,
       // 方案
-      scheme: item.selectedSchemas?.join(', ') || '默认方案',
+      scheme: formatRuleTypeList(item.selectedSchemas).join(', ') || 'Default Scheme',
       status: item.status,
       // 违规数：如果后端任务列表没返回这个字段，需要后端补上，或者前端单独查
       // 暂时用 item.violation_count (假设后端有) 或者 '-'
@@ -62,7 +63,7 @@ const fetchTaskList = async () => {
     total.value = res.count;
   } catch (error) {
     console.error(error);
-    ElMessage.error('获取任务列表失败');
+    ElMessage.error('Failed to load the task list.');
   } finally {
     isLoading.value = false;
   }
@@ -103,10 +104,10 @@ const handleDownload = (row: any) => {
 
 const formatStatus = (status: string) => {
   const map: Record<string, string> = {
-    completed: '检测完成',
-    failed: '检测失败',
-    running: '检测中',
-    pending: '待检测',
+    completed: 'Completed',
+    failed: 'Failed',
+    running: 'Running',
+    pending: 'Pending',
   };
   return map[status] || status;
 };
@@ -122,42 +123,42 @@ onMounted(() => {
       <div class="page-title">
         <div class="title-bar"></div>
         <div class="title-text">
-          <div class="title-main">任务结果总览</div>
+          <div class="title-main">Task Results Overview</div>
           <div class="title-sub">Task Results Overview</div>
         </div>
       </div>
 
       <div class="query-card">
         <el-form :inline="true" :model="searchForm" class="demo-form-inline">
-          <el-form-item label="任务ID">
+          <el-form-item label="Task ID">
             <el-input
               v-model="searchForm.taskId"
-              placeholder="输入ID"
+              placeholder="Enter ID"
               style="width: 140px"
               clearable
               @keyup.enter="handleSearch"
             />
           </el-form-item>
-          <el-form-item label="任务名称">
+          <el-form-item label="Task Name">
             <el-input
               v-model="searchForm.taskName"
-              placeholder="输入任务名称"
+              placeholder="Enter task name"
               style="width: 180px"
               clearable
               @keyup.enter="handleSearch"
             />
           </el-form-item>
-          <el-form-item label="状态">
+          <el-form-item label="Status">
             <el-select
               v-model="searchForm.status"
-              placeholder="全部"
+              placeholder="All"
               style="width: 120px"
               clearable
               @change="handleSearch"
             >
-              <el-option label="已完成" value="completed" />
-              <el-option label="失败" value="failed" />
-              <el-option label="进行中" value="running" />
+              <el-option label="Completed" value="completed" />
+              <el-option label="Failed" value="failed" />
+              <el-option label="Running" value="running" />
             </el-select>
           </el-form-item>
 
@@ -168,9 +169,9 @@ onMounted(() => {
               @click="handleSearch"
               :loading="isLoading"
             >
-              查询
+              Search
             </el-button>
-            <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+            <el-button :icon="Refresh" @click="handleReset">Reset</el-button>
           </el-form-item>
         </el-form>
       </div>
@@ -185,22 +186,22 @@ onMounted(() => {
         >
           <el-table-column
             prop="id"
-            label="任务ID"
+            label="Task ID"
             width="100"
             align="center"
           />
-          <el-table-column prop="name" label="任务名称" min-width="220">
+          <el-table-column prop="name" label="Task Name" min-width="220">
             <template #default="{ row }">
               <span class="font-bold text-gray-700">{{ row.name }}</span>
             </template>
           </el-table-column>
           <el-table-column
             prop="scope"
-            label="审查范围"
+            label="Case Scope"
             width="140"
             align="center"
           />
-          <el-table-column label="检测方案" width="200" align="center">
+          <el-table-column label="Detection Schemes" width="200" align="center">
             <template #default="{ row }">
               <el-tag effect="plain" type="info" size="small">
                 {{ row.scheme }}
@@ -208,18 +209,18 @@ onMounted(() => {
             </template>
           </el-table-column>
 
-          <el-table-column label="违规发现" width="140" align="center">
+          <el-table-column label="Violations Found" width="140" align="center">
             <template #default="{ row }">
               <span v-if="row.status === 'completed'" class="violation-count">
                 {{
-                  row.violationCount !== '-' ? `${row.violationCount} 项` : '-'
+                  row.violationCount !== '-' ? `${row.violationCount} items` : '-'
                 }}
               </span>
               <span v-else>-</span>
             </template>
           </el-table-column>
 
-          <el-table-column label="任务状态" width="120" align="center">
+          <el-table-column label="Status" width="120" align="center">
             <template #default="{ row }">
               <el-tag
                 :type="
@@ -237,13 +238,13 @@ onMounted(() => {
           </el-table-column>
           <el-table-column
             prop="finishTime"
-            label="完成时间"
+            label="Completed At"
             width="180"
             align="center"
           />
 
           <el-table-column
-            label="操作"
+            label="Actions"
             width="200"
             fixed="right"
             align="center"
@@ -256,7 +257,7 @@ onMounted(() => {
                 @click="handleViewResult(row)"
                 :disabled="row.status !== 'completed'"
               >
-                查看明细
+                View Details
               </el-button>
               <span class="sep">|</span>
               <el-button
@@ -266,7 +267,7 @@ onMounted(() => {
                 @click="handleDownload(row)"
                 :disabled="row.status !== 'completed'"
               >
-                下载
+                Download
               </el-button>
             </template>
           </el-table-column>
