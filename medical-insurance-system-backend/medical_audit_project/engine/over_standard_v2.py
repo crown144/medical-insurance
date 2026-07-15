@@ -1,6 +1,7 @@
 import logging
 import json
 import re
+from copy import deepcopy
 from datetime import datetime
 from dateutil import parser as date_parser
 from typing import List, Dict, Any, Union
@@ -253,6 +254,163 @@ def submit_result(is_applicable: bool, is_compliant: bool = True, failure_messag
     }
 
 
+# 收费项目名称和代码必须来自病历中的 ``收费报告``，不能用规则配置字段代替。
+# 规则配置只可用来定位候选条目；最终返回值始终是原始收费条目的快照。
+_CHARGE_NAME_KEYS = {
+    "收费项目名称", "项目名称", "项目名", "药品名称", "药品通用名",
+    "name", "item_name", "drug_name",
+}
+_CHARGE_CODE_KEYS = {
+    "收费项目代码", "项目代码", "收费编码", "医保编码",
+    "code", "item_code", "drug_code",
+}
+
+
+def _non_empty_text(value: Any) -> str:
+    """将病历字段标准化为可比较的字符串；空值不参与匹配。"""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.lower() in {"", "none", "null", "xxx"} else text
+
+
+def _collect_charge_clues(value: Any, names: set, codes: set, indexes: set) -> None:
+    """从规则证据链中提取收费项目线索和明确的收费报告索引。"""
+    if isinstance(value, dict):
+        field_path = value.get("field_path")
+        if isinstance(field_path, str):
+            indexes.update(int(index) for index in re.findall(r"收费报告\[(\d+)\]", field_path))
+
+        for key, item_value in value.items():
+            text = _non_empty_text(item_value)
+            if key in _CHARGE_NAME_KEYS and text:
+                names.add(text)
+            elif key in _CHARGE_CODE_KEYS and text:
+                codes.add(text)
+
+        # 高亮文本本身没有字段名时，用其与收费项目名称/代码精确比对。
+        highlighted_text = _non_empty_text(value.get("highlighted_text"))
+        if highlighted_text:
+            names.add(highlighted_text)
+            codes.add(highlighted_text)
+
+        for item_value in value.values():
+            _collect_charge_clues(item_value, names, codes, indexes)
+    elif isinstance(value, list):
+        for item in value:
+            _collect_charge_clues(item, names, codes, indexes)
+
+
+def get_matched_charge_items(patient_json: Dict, rule: Rule, evidence: Dict = None) -> List[Dict]:
+    """
+    从原始收费报告中返回规则实际命中的收费条目。
+
+    返回的每一条都保留原始字段，并增加 ``收费明细索引`` 方便前端精确定位。
+    证据不足时可用规则的精确匹配条件定位，但返回值仍只能是原始收费条目，
+    绝不直接把规则名称或匹配值伪装成收费项目名称/代码。
+    """
+    fee_data = patient_json.get("收费报告", []) if isinstance(patient_json, dict) else []
+    if not isinstance(fee_data, list):
+        return []
+
+    names, codes, indexes = set(), set(), set()
+    _collect_charge_clues(evidence or {}, names, codes, indexes)
+
+    # 规则的匹配条件是最后的定位回退，仅做精确匹配，避免把相似项目误标为违规。
+    match_field = _non_empty_text(getattr(rule, "match_field", ""))
+    match_value = _non_empty_text(getattr(rule, "match_value", ""))
+    rule_name = _non_empty_text(getattr(rule, "drug_name", ""))
+
+    matched = []
+    seen_indexes = set()
+    for index, raw_item in enumerate(fee_data):
+        if not isinstance(raw_item, dict):
+            continue
+
+        item_name = _non_empty_text(raw_item.get("收费项目名称"))
+        item_code = _non_empty_text(raw_item.get("收费项目代码"))
+        if not item_name or not item_code:
+            # 源数据本身缺少名称或代码时不能补造，避免输出不准确的数据。
+            continue
+
+        evidence_hit = (
+            index in indexes
+            or item_name in names
+            or item_code in codes
+        )
+        # 优先使用规则证据链定位原始条目。
+        if evidence_hit and index not in seen_indexes:
+            snapshot = deepcopy(raw_item)
+            snapshot.pop("_index", None)  # 检测器运行时的临时字段不写入结果
+            snapshot["收费明细索引"] = index
+            matched.append(snapshot)
+            seen_indexes.add(index)
+
+    # 证据可能只含价格、诊断等非项目字段。此时才回退到规则的精确匹配条件；
+    # 仍然只返回收费报告中的真实条目，绝不直接返回配置值。
+    if not matched:
+        for index, raw_item in enumerate(fee_data):
+            if not isinstance(raw_item, dict):
+                continue
+            item_name = _non_empty_text(raw_item.get("收费项目名称"))
+            item_code = _non_empty_text(raw_item.get("收费项目代码"))
+            rule_match = (
+                bool(match_field and match_value and _non_empty_text(raw_item.get(match_field)) == match_value)
+                or bool(rule_name and item_name == rule_name)
+            )
+            if item_name and item_code and rule_match:
+                snapshot = deepcopy(raw_item)
+                snapshot.pop("_index", None)
+                snapshot["收费明细索引"] = index
+                matched.append(snapshot)
+
+    return matched
+
+
+def build_charge_violation_item(patient_json: Dict, rule: Rule, rule_type: str, evidence: Dict = None) -> Dict:
+    """构造结果中的收费项目快照，名称和代码只取自实际收费明细。"""
+    details = get_matched_charge_items(patient_json, rule, evidence)
+    if details:
+        first_item = details[0]
+        return {
+            "收费项目名称": first_item["收费项目名称"],
+            "收费项目代码": first_item["收费项目代码"],
+            "收费明细": details,
+            "提示": f"违反{rule_type}规则",
+        }
+
+    return {
+        "收费项目名称": "",
+        "收费项目代码": "",
+        "收费明细": [],
+        "提示": f"违反{rule_type}规则；未定位到可对应的原始收费明细",
+    }
+
+
+def build_charge_highlights(details: List[Dict], evidence: Dict = None) -> List[Dict]:
+    """保留规则证据，并补充每条已定位收费明细的精确名称、代码高亮。"""
+    highlights = []
+    seen = set()
+    for item in (evidence or {}).get("highlights", []):
+        if not isinstance(item, dict):
+            continue
+        field_path = _non_empty_text(item.get("field_path"))
+        text = _non_empty_text(item.get("highlighted_text"))
+        if field_path and text and (field_path, text) not in seen:
+            highlights.append({"field_path": field_path, "highlighted_text": text})
+            seen.add((field_path, text))
+
+    for item in details:
+        index = item.get("收费明细索引")
+        for field in ("收费项目名称", "收费项目代码"):
+            text = _non_empty_text(item.get(field))
+            field_path = f"$.收费报告[{index}].{field}"
+            if text and (field_path, text) not in seen:
+                highlights.append({"field_path": field_path, "highlighted_text": text})
+                seen.add((field_path, text))
+    return highlights
+
+
 def preprocess_patient_data(patient_json: dict):
     """
     数据适配层：
@@ -316,8 +474,9 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
     preprocess_patient_data(patient_json)
     
 
-    if target_rules:
-        # 如果传入了 target_rules，直接使用它们
+    if target_rules is not None:
+        # 只要调用方显式传入了 target_rules，就严格以它为准；空列表表示
+        # “本任务未选择此类规则”，不能回退为执行规则库中的全部启用规则。
         # 需确保只执行属于当前 rule_type 的规则，防止规则混用
         all_target_rules = target_rules
         rules = [r for r in all_target_rules if r.type == rule_type]
@@ -381,18 +540,23 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
             if not res.get('is_compliant', True):
                 logger.info(f"[RuleEngineV2] Violation found for rule {rule.rule_id}")
 
-                violation_item = {
-                    "收费项目名称": rule.drug_name,
-                    "收费项目代码": rule.match_value or "UNKNOWN",
-                    "提示": f"违反{rule_type}规则"
-                }
+                evidence = res.get("evidence", {})
+                violation_item = build_charge_violation_item(
+                    patient_json=patient_json,
+                    rule=rule,
+                    rule_type=rule_type,
+                    evidence=evidence,
+                )
+                highlights = build_charge_highlights(
+                    violation_item["收费明细"], evidence
+                )
                 
                 all_results.append({
                     "passed": False,
                     "reason": res.get('failure_message', f'违反{rule_type}规则'),
                     "ruleId": rule.rule_id,
                     "item": violation_item,
-                    "highlights": [],
+                    "highlights": highlights,
                     "violation": True,
                     "rule": {
                         "rule_id": rule.rule_id,

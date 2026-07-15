@@ -2,23 +2,17 @@
 import type { NotificationItem } from '@vben/layouts';
 
 import { computed, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 
 import { AuthenticationLoginExpiredModal } from '@vben/common-ui';
-import { VBEN_DOC_URL, VBEN_GITHUB_URL } from '@vben/constants';
 import { useWatermark } from '@vben/hooks';
-import { BookOpenText, CircleHelp, SvgGithubIcon } from '@vben/icons';
 import {
   BasicLayout,
   LockScreen,
   Notification,
-  UserDropdown,
 } from '@vben/layouts';
 import { preferences } from '@vben/preferences';
 import { useAccessStore, useUserStore } from '@vben/stores';
-import { openWindow } from '@vben/utils';
 
-import { $t } from '#/locales';
 import { useAuthStore } from '#/store';
 import LoginForm from '#/views/_core/authentication/login.vue';
 
@@ -75,7 +69,6 @@ const notifications = ref<NotificationItem[]>([
   },
 ]);
 
-const router = useRouter();
 const userStore = useUserStore();
 const authStore = useAuthStore();
 const accessStore = useAccessStore();
@@ -84,46 +77,12 @@ const showDot = computed(() =>
   notifications.value.some((item) => !item.isRead),
 );
 
-const menus = computed(() => [
-  {
-    handler: () => {
-      router.push({ name: 'Profile' });
-    },
-    icon: 'lucide:user',
-    text: $t('page.auth.profile'),
-  },
-  {
-    handler: () => {
-      openWindow(VBEN_DOC_URL, {
-        target: '_blank',
-      });
-    },
-    icon: BookOpenText,
-    text: $t('ui.widgets.document'),
-  },
-  {
-    handler: () => {
-      openWindow(VBEN_GITHUB_URL, {
-        target: '_blank',
-      });
-    },
-    icon: SvgGithubIcon,
-    text: 'GitHub',
-  },
-  {
-    handler: () => {
-      openWindow(`${VBEN_GITHUB_URL}/issues`, {
-        target: '_blank',
-      });
-    },
-    icon: CircleHelp,
-    text: $t('ui.widgets.qa'),
-  },
-]);
-
 const avatar = computed(() => {
   return userStore.userInfo?.avatar || preferences.app.defaultAvatar || '';
 });
+const displayUserName = computed(
+  () => userStore.userInfo?.realName || userStore.userInfo?.username || '当前用户',
+);
 
 async function handleLogout() {
   await authStore.logout(false);
@@ -170,17 +129,16 @@ watch(
 </script>
 
 <template>
+  <Teleport to="body">
+    <div class="system-account-bar">
+      <span class="current-user">当前登录账户：{{ displayUserName }}</span>
+      <button class="header-logout-button" type="button" @click="handleLogout">
+        退出登录
+      </button>
+    </div>
+  </Teleport>
+
   <BasicLayout @clear-preferences-and-logout="handleLogout">
-    <template #user-dropdown>
-      <UserDropdown
-        :avatar
-        :menus
-        :text="userStore.userInfo?.realName"
-        description="ann.vben@gmail.com"
-        tag-text="Pro"
-        @logout="handleLogout"
-      />
-    </template>
     <template #notification>
       <Notification
         :dot="showDot"
@@ -204,3 +162,44 @@ watch(
     </template>
   </BasicLayout>
 </template>
+
+<style scoped>
+.system-account-bar {
+  position: fixed;
+  top: 10px;
+  right: 18px;
+  z-index: 10000;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  height: 34px;
+  padding: 0 8px 0 12px;
+  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 8%);
+}
+
+.current-user {
+  color: #303133;
+  font-size: 14px;
+  white-space: nowrap;
+}
+
+.header-logout-button {
+  padding: 5px 10px;
+  color: #606266;
+  font-size: 13px;
+  line-height: 20px;
+  background: transparent;
+  border: 1px solid #dcdfe6;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.header-logout-button:hover {
+  color: #409eff;
+  border-color: #a0cfff;
+  background: #ecf5ff;
+}
+</style>

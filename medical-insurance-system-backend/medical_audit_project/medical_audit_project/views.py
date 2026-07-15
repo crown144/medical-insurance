@@ -1,9 +1,12 @@
 import os
 
+from django.contrib.auth import authenticate
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
+from rest_framework import status
 
+from accounts.auth import build_access_token, get_request_profile, profile_payload
 from rules.services.agenta_service import AgentAService
 
 
@@ -17,17 +20,12 @@ def _temp_llm_disabled() -> bool:
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def user_info(request):
+    profile = get_request_profile(request)
+    if not profile:
+        return Response({'detail': '登录状态无效或已过期。'}, status=status.HTTP_401_UNAUTHORIZED)
     return Response({
         'code': 0,
-        'result': {
-            'userId': '1',
-            'username': 'admin',
-            'realName': '系统管理员',
-            'avatar': '',
-            'desc': 'Super Admin',
-            'roles': ['super'],
-            'token': 'fake-token-123',
-        },
+        'result': profile_payload(profile),
         'message': 'ok',
         'type': 'success',
     })
@@ -36,18 +34,38 @@ def user_info(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def auth_login(request):
+    payload = request.data or {}
+    username = str(payload.get('username') or '').strip()
+    password = str(payload.get('password') or '')
+    user = authenticate(request, username=username, password=password)
+    if not user:
+        return Response({'message': '用户名或密码错误。'}, status=status.HTTP_401_UNAUTHORIZED)
+    try:
+        profile = user.audit_profile
+    except Exception:
+        return Response({'message': '该用户未配置医保审核角色。'}, status=status.HTTP_403_FORBIDDEN)
+    token = build_access_token(user)
     return Response({
         'code': 0,
         'result': {
-            'accessToken': 'fake-jwt-token-example',
-            'token': 'fake-jwt-token-example',
-            'userId': 1,
-            'username': 'admin',
-            'roles': ['super'],
+            'accessToken': token,
+            'token': token,
+            **profile_payload(profile),
         },
         'message': '登录成功',
         'type': 'success',
     })
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def auth_logout(request):
+    """前端退出登录确认接口。
+
+    当前访问令牌为无状态 token，真正的退出由前端清除 token 完成；保留该
+    成功响应可避免正常用户点击退出时请求 404，导致退出体验异常。
+    """
+    return Response({'code': 0, 'result': None, 'message': '已退出登录', 'type': 'success'})
 
 
 @api_view(['GET'])
@@ -59,7 +77,11 @@ def menu_all(request):
 @api_view(['GET'])
 @permission_classes([AllowAny])
 def auth_codes(request):
-    return Response({'code': 0, 'result': [], 'message': 'ok', 'type': 'success'})
+    profile = get_request_profile(request)
+    if not profile:
+        return Response({'detail': '登录状态无效或已过期。'}, status=status.HTTP_401_UNAUTHORIZED)
+    codes = ['developer:clue-view'] if profile.role == 'developer' else []
+    return Response({'code': 0, 'result': codes, 'message': 'ok', 'type': 'success'})
 
 
 @api_view(['POST'])

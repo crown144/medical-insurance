@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import os
+import re
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
@@ -118,6 +119,12 @@ class AgentAService:
         system_prompt = f"""
 你是一名医保规则转换专家，负责将自然语言医保规则转换为标准的 Python 审核函数。
 
+## 输出硬约束
+- 你的回复第一个字符必须是 `d`，即直接从 `def execute_rule(ctx):` 开始。
+- 只能输出一个完整 Python 函数，不要输出函数之外的任何内容。
+- 如果需要确认约束，只能在内部完成，最终回复只保留代码。
+- 函数内必须包含至少一个 `return submit_result(...)`。
+
 ## 数据结构
 {json_data_schema()}
 
@@ -127,7 +134,7 @@ class AgentAService:
 
 ## 转换要求
 1. 严格生成 `def execute_rule(ctx):`，并且最终必须 `return submit_result(...)`。
-2. 只输出 Python 代码，不要输出解释、Markdown、标题、代码围栏。
+2. 只输出 Python 函数代码，最终回复不得包含函数之外的文本。
 3. 严格三阶段结构：
    - Phase 1: Prepare Data，只取值、过滤、分组、计算，不做最终判定。
    - Phase 2: Predicates，只做原子判断，例如是否命中目标项目、是否超标准、是否缺少基础项目。
@@ -157,7 +164,11 @@ class AgentAService:
 现在请将用户提供的自然语言医保规则转换为符合以上所有要求的 Python 函数 execute_rule(ctx)。
 """.strip()
 
-        user_prompt = f'Rule: "{rule_text}"\nGenerate Python Code: /no_think'
+        user_prompt = (
+            '只返回 Python 代码，不要输出函数之外的任何内容。\n'
+            f'Rule: "{rule_text}"\n'
+            'Generate Python Code: /no_think'
+        )
         return system_prompt, user_prompt
 
     @classmethod
@@ -194,7 +205,7 @@ class AgentAService:
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_prompt},
             ],
-            temperature=0.1,
+            temperature=0,
             max_tokens=cls._llm_config()['max_tokens'],
         )
 
@@ -227,15 +238,59 @@ class AgentAService:
     @staticmethod
     def _clean_code(text: str) -> str:
         text = text.strip()
-        if '```' in text:
-            start = text.find('```')
-            end = text.rfind('```')
-            if start != -1 and end != -1 and end > start:
-                block = text[start + 3 : end].strip()
-                if block.startswith('python'):
-                    block = block[6:].strip()
-                return block.strip()
-        return text
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL | re.IGNORECASE).strip()
+
+        fenced_blocks = re.findall(r'```(?:python)?\s*(.*?)```', text, flags=re.DOTALL | re.IGNORECASE)
+        for block in fenced_blocks:
+            cleaned = AgentAService._extract_valid_execute_rule(block)
+            if cleaned:
+                return cleaned
+
+        cleaned = AgentAService._extract_valid_execute_rule(text)
+        return cleaned or text
+
+    @staticmethod
+    def _extract_valid_execute_rule(text: str) -> str:
+        start = text.find('def execute_rule')
+        if start == -1:
+            return ''
+
+        candidate = text[start:].strip()
+        lines = [
+            line.rstrip()
+            for line in candidate.splitlines()
+            if not line.strip().startswith('```')
+        ]
+
+        for end in range(len(lines), 0, -1):
+            code = '\n'.join(lines[:end]).strip()
+            if not code:
+                continue
+            try:
+                tree = ast.parse(code)
+            except SyntaxError:
+                continue
+            has_execute = any(
+                isinstance(node, ast.FunctionDef) and node.name == 'execute_rule'
+                for node in tree.body
+            )
+            if has_execute and AgentAService._has_submit_result_return(tree):
+                return code
+
+        return ''
+
+    @staticmethod
+    def _has_submit_result_return(tree: ast.AST) -> bool:
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef) or node.name != 'execute_rule':
+                continue
+            for child in ast.walk(node):
+                if not isinstance(child, ast.Return):
+                    continue
+                value = child.value
+                if isinstance(value, ast.Call) and _call_name(value.func) == 'submit_result':
+                    return True
+        return False
 
     @staticmethod
     def _hardcoded_code(rule_text: str) -> str:
@@ -279,7 +334,13 @@ class AgentAService:
                 isinstance(node, ast.FunctionDef) and node.name == 'execute_rule'
                 for node in tree.body
             )
-            return {'valid': has_execute, 'errors': [] if has_execute else ['missing execute_rule function']}
+            has_submit_result_return = AgentAService._has_submit_result_return(tree)
+            errors = []
+            if not has_execute:
+                errors.append('missing execute_rule function')
+            if has_execute and not has_submit_result_return:
+                errors.append('missing return submit_result(...)')
+            return {'valid': has_execute and has_submit_result_return, 'errors': errors}
         except SyntaxError as exc:
             return {'valid': False, 'errors': [str(exc)]}
 
@@ -353,6 +414,14 @@ def submit_result(is_applicable: bool, is_compliant: bool = True, failure_messag
 '''.strip(),
     }
     return '\n\n'.join(schemas[name] for name in tools if name in schemas)
+
+
+def _call_name(func: ast.AST) -> str:
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        return func.attr
+    return ''
 
 
 def _few_shot_examples() -> str:
