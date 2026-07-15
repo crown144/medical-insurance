@@ -123,7 +123,10 @@ const loadPageData = async () => {
     // 1.2 获取病历全文
     const fetchRecord = () =>
       axios.get(PATIENT_CASE_API, {
-        params: { hospitalization_id: hospitalizationId.value },
+        params: {
+          hospitalization_id: hospitalizationId.value,
+          task_id: taskId.value,
+        },
       });
 
     const [resViolations, resRecord] = await Promise.allSettled([

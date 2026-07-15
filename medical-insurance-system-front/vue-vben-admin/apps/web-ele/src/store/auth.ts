@@ -94,6 +94,8 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       await logoutApi();
     } catch {}
+    // 退出不依赖后端会话：无论接口是否可用，都必须立即移除本地访问令牌。
+    accessStore.setAccessToken(null);
     resetAllStores();
     accessStore.setLoginExpired(false);
     await router.replace({

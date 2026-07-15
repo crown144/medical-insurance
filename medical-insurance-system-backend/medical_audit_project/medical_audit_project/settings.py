@@ -36,6 +36,7 @@ INSTALLED_APPS = [
     'pricings',
     'tasks',
     'results',
+    'accounts',
     'cases',
     'repeat_charging',
     'feijian',  # 飞检结果管理
@@ -105,6 +106,10 @@ DATABASES = {
 }
 
 SOURCE_MDC_ORG_CD = os.environ.get('SOURCE_MDC_ORG_CD', '')
+SOURCE_MDC_ORG_NAME = os.environ.get('SOURCE_MDC_ORG_NAME', '')
+MEDICAL_AUDIT_SYSTEM_CODE = os.environ.get('MEDICAL_AUDIT_SYSTEM_CODE', 'YIBAO')
+MEDICAL_AUDIT_EVIDENCE_VERSION = os.environ.get('MEDICAL_AUDIT_EVIDENCE_VERSION', 'v20260710')
+MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE', str(60 * 60 * 12)))
 INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
 INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
 INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))

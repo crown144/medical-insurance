@@ -1,5 +1,6 @@
 // src/api/result.ts
 import { baseRequestClient } from '#/api/request';
+import { useAccessStore } from '@vben/stores';
 
 enum Api {
   // 🟢 修正：只保留一个基础路径，供列表和详情共用
@@ -28,4 +29,13 @@ export const getAuditDetailApi = (id: number | string) => {
  */
 export const getResultOverviewApi = (taskId: number | string) => {
   return baseRequestClient.get<any>(`/tasks/${taskId}/overview/`);
+};
+
+/** 仅开发用户可访问：预览结构化违规结果线索。 */
+export const getViolationCluesApi = (params: any) => {
+  const token = useAccessStore().accessToken;
+  return baseRequestClient.get<any>('/results/clues/', {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    params,
+  });
 };

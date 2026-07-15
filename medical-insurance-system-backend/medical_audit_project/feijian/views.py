@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from tasks.models import Task
 from tasks.serializers import TaskSerializer
 from tasks.tasks import run_audit_task
+from rules.models import Rule
 
 from .models import FeiJianImportBatch, FeiJianRawRecord
 from .serializers import (
@@ -64,6 +65,29 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             '超标准收费',
         ]
         rule_ids = serializer.validated_data.get('rule_ids') or []
+        if not rule_ids:
+            return Response(
+                {'rule_ids': ['请至少选择一条需要执行的规则。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 仅允许将已启用、且属于所选审查方案的规则加入任务，避免页面选择
+        # 与实际执行范围不一致。
+        selected_rules = list(
+            Rule.objects.filter(id__in=set(rule_ids), status=True).order_by('id')
+        )
+        if len(selected_rules) != len(set(rule_ids)):
+            return Response(
+                {'rule_ids': ['存在不存在或未启用的规则，请刷新后重新选择。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        invalid_rules = [rule.rule_id for rule in selected_rules if rule.type not in selected_schemas]
+        if invalid_rules:
+            return Response(
+                {'rule_ids': [f'规则 {", ".join(invalid_rules)} 不属于已选审查方案。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         execute = serializer.validated_data.get('execute', True)
         mdc_org_cd = (
             str(serializer.validated_data.get('mdc_org_cd') or getattr(settings, 'SOURCE_MDC_ORG_CD', '')).strip()
@@ -83,8 +107,7 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
                     f'共 {len(hospitalization_ids)} 个住院号。'
                 ),
             )
-            if rule_ids:
-                task.rules.set(rule_ids)
+            task.rules.set(selected_rules)
             batch.records.update(audit_task_id=str(task.id))
 
         queued = False

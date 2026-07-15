@@ -9,7 +9,7 @@ import type {
   PreviewRecord,
 } from '../../../api/model/feijianModel';
 
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { DataAnalysis, Refresh, Search, Upload } from '@element-plus/icons-vue';
@@ -25,6 +25,7 @@ import {
   previewFeiJianImportApi,
   uploadFeiJianFileApi,
 } from '../../../api/feijian';
+import { getRuleListApi } from '../../../api/task';
 
 // ==================== 状态定义 ====================
 
@@ -83,6 +84,10 @@ const auditSelectedSchemas = ref<string[]>([
   '重复收费',
   '超标准收费',
 ]);
+const auditRulesLoading = ref(false);
+const auditRules = ref<any[]>([]);
+const auditSelectedRuleIds = ref<number[]>([]);
+const auditRuleSearch = ref('');
 const auditBuildResult = ref<any | null>(null);
 const auditSchemaOptions = [
   { label: '超限定用药', value: '超限定用药' },
@@ -95,6 +100,15 @@ const successfulBatches = computed(() =>
 const selectedAuditBatch = computed(() =>
   successfulBatches.value.find((batch) => batch.id === auditBatchId.value),
 );
+const availableAuditRules = computed(() => {
+  const keyword = auditRuleSearch.value.trim().toLowerCase();
+  return auditRules.value.filter((rule) => {
+    if (!auditSelectedSchemas.value.includes(rule.type)) return false;
+    if (!keyword) return true;
+    return [rule.ruleId, rule.drugName, rule.drug_name, rule.description, rule.type]
+      .some((value) => String(value || '').toLowerCase().includes(keyword));
+  });
+});
 
 // ---- 结果对齐 ----
 const alignmentBatchId = ref<number | null>(null);
@@ -214,6 +228,31 @@ async function loadRawRecords() {
   }
 }
 
+async function loadAuditRules() {
+  auditRulesLoading.value = true;
+  try {
+    const result = await getRuleListApi({
+      paginate: 'false',
+      status: 'true',
+    });
+    auditRules.value = Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.error('加载飞检可执行规则失败', error);
+    ElMessage.error('加载可执行规则失败');
+  } finally {
+    auditRulesLoading.value = false;
+  }
+}
+
+watch(auditSelectedSchemas, () => {
+  const allowedIds = new Set(
+    auditRules.value
+      .filter((rule) => auditSelectedSchemas.value.includes(rule.type))
+      .map((rule) => rule.id),
+  );
+  auditSelectedRuleIds.value = auditSelectedRuleIds.value.filter((id) => allowedIds.has(id));
+});
+
 // ==================== 导入流程 ====================
 
 /** 步骤1: 选择文件并上传分析 */
@@ -310,6 +349,10 @@ async function handleBuildAuditTask() {
     ElMessage.warning('请选择审查方案');
     return;
   }
+  if (auditSelectedRuleIds.value.length === 0) {
+    ElMessage.warning('请至少选择一条执行规则');
+    return;
+  }
 
   auditBuildLoading.value = true;
   try {
@@ -317,6 +360,7 @@ async function handleBuildAuditTask() {
       execute: auditExecuteNow.value,
       name: auditTaskName.value.trim() || undefined,
       selectedSchemas: auditSelectedSchemas.value,
+      rule_ids: auditSelectedRuleIds.value,
     });
     auditBuildResult.value = result;
     ElMessage.success(
@@ -423,6 +467,7 @@ onMounted(() => {
   loadStats();
   loadImportBatches();
   loadRawRecords();
+  loadAuditRules();
 });
 </script>
 
@@ -767,6 +812,33 @@ onMounted(() => {
                         :value="item.value"
                       />
                     </el-select>
+                  </div>
+                  <div class="query-item">
+                    <div class="query-label">执行规则</div>
+                    <el-select
+                      v-model="auditSelectedRuleIds"
+                      multiple
+                      filterable
+                      collapse-tags
+                      collapse-tags-tooltip
+                      :loading="auditRulesLoading"
+                      placeholder="选择具体执行规则"
+                      style="width: 360px"
+                    >
+                      <el-option
+                        v-for="rule in availableAuditRules"
+                        :key="rule.id"
+                        :label="`[${rule.type}] ${rule.ruleId || rule.rule_id} - ${rule.drugName || rule.drug_name}`"
+                        :value="rule.id"
+                      />
+                    </el-select>
+                    <el-input
+                      v-model="auditRuleSearch"
+                      clearable
+                      placeholder="筛选规则"
+                      style="width: 130px; margin-top: 6px"
+                    />
+                    <div class="muted">已选 {{ auditSelectedRuleIds.length }} 条；仅展示已启用且属于所选方案的规则。</div>
                   </div>
                   <div class="query-item">
                     <div class="query-label">执行方式</div>
@@ -1540,4 +1612,3 @@ onMounted(() => {
   }
 }
 </style>
-

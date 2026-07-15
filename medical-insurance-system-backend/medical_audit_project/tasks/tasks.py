@@ -177,7 +177,7 @@ def run_audit_task(task_id):
                                         rule=rule_obj,
                                         hospitalization_id=hos_id,
                                         reason=str(reason),
-                                        violation_item=str(res.get('item', {})),
+                                        violation_item=json.dumps(res.get('item', {}), ensure_ascii=False, default=str),
                                         discharge_date=cleaned_discharge_date
                                     )
                                     
@@ -230,7 +230,7 @@ def run_audit_task(task_id):
                                         rule=rule_obj,
                                         hospitalization_id=hos_id,
                                         reason=str(reason),
-                                        violation_item=str(res.get('item', {})),
+                                        violation_item=json.dumps(res.get('item', {}), ensure_ascii=False, default=str),
                                         discharge_date=cleaned_discharge_date
                                     )
                                     
@@ -285,7 +285,7 @@ def run_audit_task(task_id):
                                         rule=rule_obj,
                                         hospitalization_id=hos_id,
                                         reason=str(reason),
-                                        violation_item=str(res.get('item', {})),
+                                        violation_item=json.dumps(res.get('item', {}), ensure_ascii=False, default=str),
                                         discharge_date=cleaned_discharge_date
                                     )
                                     

@@ -35,6 +35,17 @@ const result: RouteRecordRaw = {
       },
     },
 
+    {
+      path: 'violation-clues',
+      name: 'ResultViolationClues',
+      component: () => import('#/views/result/ViolationClues.vue'),
+      meta: {
+        title: '违规结果线索',
+        icon: 'mdi:table-eye',
+        authority: ['developer'],
+      },
+    },
+
     // 3. 特定任务明细 (对应 SpecificTaskResult.vue)
     {
       path: 'task-items',
