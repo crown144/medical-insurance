@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'results',
     'accounts',
     'cases',
+    'sql_analysis',
     'repeat_charging',
     'feijian',  # 飞检结果管理
     'rule_import',  # 规则批量导入转换
@@ -96,12 +97,18 @@ DATABASES = {
         'PORT': '3306',
     },
     'source_medical_db': {
-        'host': os.environ.get('SOURCE_DB_HOST', ''),
-        'port': int(os.environ.get('SOURCE_DB_PORT', '3306')),
-        'user': os.environ.get('SOURCE_DB_USER', ''),
-        'password': os.environ.get('SOURCE_DB_PASSWORD', ''),
-        'database': os.environ.get('SOURCE_DB_NAME', ''),
-        'charset': 'utf8mb4',
+        # 'host': os.environ.get('SOURCE_DB_HOST', ''),
+        # 'port': int(os.environ.get('SOURCE_DB_PORT', '3306')),
+        # 'user': os.environ.get('SOURCE_DB_USER', ''),
+        # 'password': os.environ.get('SOURCE_DB_PASSWORD', ''),
+        # 'database': os.environ.get('SOURCE_DB_NAME', ''),
+        # 'charset': 'utf8mb4',
+        'ENGINE': 'django.db.backends.mysql',
+        'NAME': 'medical_insurance_demo',
+        'USER': 'root',
+        'PASSWORD': '555321',
+        'HOST': '127.0.0.1',
+        'PORT': '3306',
     }
 }
 

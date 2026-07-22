@@ -16,6 +16,7 @@ urlpatterns = [
     path('api/', include('pricings.urls')),
     path('api/', include('results.urls')),
     path('api/cases/', include('cases.urls')),
+    path('api/', include('sql_analysis.urls')),
     path('api/', include('repeat_charging.urls')),
     path('api/', include('feijian.urls')),
     path('api/', include('rule_import.urls')),
