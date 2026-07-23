@@ -50,6 +50,7 @@ def build_converter_config() -> Dict[str, Any]:
             "项目单位": "ITM_UNT",
             "项目费用": "ITM_FEE",
             "费用类别": "FEE_CGY_NM",
+            "收费明细主键": "PRM_KEY",
             "ORDER_NO": "ORDER_NO",
             "ORDER_ITEM_CODE": "ORDER_ITEM_CODE",
         },
@@ -392,7 +393,8 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                     fee.CHRG_RTRN_FLG,
                     fee.MDC_ORG_CD
                 FROM ODS_FACT_INHOS_FEE_DTL fee
-                WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}';
+                WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}'
+                ORDER BY fee.PRM_KEY;
             """,
         "医保": f"""
                 SELECT DISTINCT INHOS_NO, MDCR_CGY_CD, MDCR_CGY_NM, INVLD_FLG, MDC_ORG_CD

@@ -1,20 +1,29 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Refresh, Search, View } from '@element-plus/icons-vue';
+import { Download, Refresh, Search, View } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
+import { useUserStore } from '@vben/stores';
 
 import { baseRequestClient } from '../../api/request';
-import { getTaskResultListApi } from '../../api/result';
+import {
+  downloadTaskResultCasesApi,
+  getTaskResultListApi,
+} from '../../api/result';
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStore();
+const canDownloadResultCases = computed(() =>
+  userStore.userInfo?.roles?.includes('developer'),
+);
 
 const taskId = ref(String(route.query.taskId || ''));
 const taskName = ref(String(route.query.taskName || ''));
 
 const isLoading = ref(false);
+const isDownloadingCases = ref(false);
 const tableData = ref<any[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
@@ -147,6 +156,33 @@ const goToAuditDetail = (row: any) => {
   });
 };
 
+const downloadResultCases = async () => {
+  if (!taskId.value) return;
+  isDownloadingCases.value = true;
+  try {
+    const blob = await downloadTaskResultCasesApi(taskId.value);
+    const extension = blob.type.includes('zip') ? 'zip' : 'json';
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `任务病历_任务${taskId.value}.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+  } catch (error: any) {
+    const data = error?.response?.data;
+    if (data instanceof Blob) {
+      try {
+        const payload = JSON.parse(await data.text());
+        ElMessage.error(payload.error || '任务病历下载失败');
+        return;
+      } catch {}
+    }
+    ElMessage.error('任务病历下载失败');
+  } finally {
+    isDownloadingCases.value = false;
+  }
+};
+
 onMounted(() => {
   if (taskId.value) {
     fetchTaskInfo();
@@ -195,6 +231,15 @@ onMounted(() => {
                 查询
               </el-button>
               <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+              <el-button
+                v-if="canDownloadResultCases"
+                type="success"
+                :icon="Download"
+                :loading="isDownloadingCases"
+                @click="downloadResultCases"
+              >
+                下载任务病历
+              </el-button>
             </el-col>
           </el-row>
         </el-form>

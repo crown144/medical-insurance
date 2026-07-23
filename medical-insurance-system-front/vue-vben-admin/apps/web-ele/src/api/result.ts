@@ -39,3 +39,18 @@ export const getViolationCluesApi = (params: any) => {
     params,
   });
 };
+
+/** 仅开发用户可下载：任务内病历 JSON 或 ZIP。 */
+export async function downloadTaskResultCasesApi(
+  taskId: number | string,
+): Promise<Blob> {
+  const token = useAccessStore().accessToken;
+  const response = await baseRequestClient.get<Blob>(
+    `/tasks/${taskId}/download-result-cases/`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+      responseType: 'blob',
+    },
+  );
+  return response.data;
+}

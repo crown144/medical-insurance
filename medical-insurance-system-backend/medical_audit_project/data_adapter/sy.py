@@ -1455,7 +1455,8 @@ class MedicalDataProcessor:
                     fee.MDC_ORG_CD,
                     fee.INVLD_FLG
                 FROM ODS_FACT_INHOS_FEE_DTL fee
-                WHERE fee.INHOS_NO IN ({quoted}) {mdc_condition};
+                WHERE fee.INHOS_NO IN ({quoted}) {mdc_condition}
+                ORDER BY fee.PRM_KEY;
             """,
             "医保": f"""
                 SELECT DISTINCT INHOS_NO, MDCR_CGY_CD, MDCR_CGY_NM, INVLD_FLG

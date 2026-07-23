@@ -27,6 +27,8 @@ _RULE_TEMPLATE_INFO = {
     '金水宝片': ('YBDR0021', '金水宝用药限定'),
 }
 
+_SOURCE_SYSTEM = 'THREE_MEDICAL_REG_EVAL'
+
 
 class CluePagination(PageNumberPagination):
     """线索列表允许开发页面按需加载更多记录。"""
@@ -61,23 +63,55 @@ def _item_id_part(value, fallback):
     return text or fallback
 
 
-def _charge_date_item_id_part(value):
-    """收费日期转换为 yyyyMMdd；不虚构源数据中不存在的时分秒。"""
-    digits = ''.join(char for char in str(value or '') if char.isdigit())
-    if not digits:
-        return 'NO_CHARGE_DATE'
-    return digits[:8]
+def _build_charge_item_id(
+    rule_id,
+    org_code,
+    hospitalization_id,
+    charge_detail_id,
+    charge_date,
+    item_code,
+    detail_index,
+    result_id,
+):
+    """生成可追溯且唯一的收费证据 itemId。
 
-
-def _build_charge_item_id(rule_id, org_code, hospitalization_id, item_code, charge_date):
-    """超限定用药收费明细 itemId：不依赖不存在的收费明细流水号。"""
+    源收费明细主键在历史数据中可能只有日期粒度，不能单独作为 itemId。
+    因此同时携带完整收费时间、收费项目、明细索引和结果主键；每条收费证据
+    都能定位，且同一线索内不会因同日多次收费而冲突。
+    """
     return '_'.join([
         _item_id_part(rule_id, 'NO_RULE'),
         _item_id_part(org_code, 'NO_ORG'),
         _item_id_part(hospitalization_id, 'NO_HOSPITALIZATION'),
-        _item_id_part(item_code, 'NO_ITEM_CODE'),
+        _item_id_part(charge_detail_id, 'NO_CHARGE_DETAIL_ID'),
         _charge_date_item_id_part(charge_date),
+        _item_id_part(item_code, 'NO_ITEM_CODE'),
+        _item_id_part(detail_index, 'NO_DETAIL_INDEX'),
+        _item_id_part(result_id, 'NO_RESULT_ID'),
     ])
+
+
+def _charge_date_item_id_part(value):
+    """将完整收费时间转为适合 itemId 的数字段。"""
+    digits = ''.join(char for char in str(value or '') if char.isdigit())
+    return digits or 'NO_CHARGE_DATE'
+
+
+def _build_external_clue_id(rule_code, org_code, hospitalization_id):
+    """构造三医联动监管与评价系统的外部线索唯一编号。"""
+    return '_'.join([
+        _SOURCE_SYSTEM,
+        _item_id_part(rule_code, 'NO_RULE'),
+        _item_id_part(org_code, 'NO_ORG'),
+        _item_id_part(hospitalization_id, 'NO_HOSPITALIZATION'),
+    ])
+
+
+def _build_clue_prompt(hospitalization_id, reason):
+    """在线索提示中前置住院号，便于上报端直接定位病例。"""
+    hospitalization = _item_id_part(hospitalization_id, 'NO_HOSPITALIZATION')
+    reason_text = str(reason or '').strip()
+    return f'{hospitalization}_{reason_text}' if reason_text else hospitalization
 
 
 def _get_rule_template_info(rule):
@@ -171,31 +205,34 @@ def _build_clue(result, diagnosis_list=None):
     task = result.task
     # 以下值为本批超限定用药线索的已确认上报值。
     # 一条线索对应同一机构、住院号和规则；收费明细在 clueEvidence 中聚合。
-    source_system = '三医联动监管与评价系统'
     rule_code, rule_name = _get_rule_template_info(result.rule)
-    org_code = '5605'
+    org_code = _item_id_part(getattr(task, 'mdc_org_cd', ''), 'NO_ORG')
 
     # 没有收费明细时仍返回一条空证据，以便开发页面准确提示缺失字段。
     evidence_sources = detail_items or [{}]
     clue_evidence = []
-    for detail in evidence_sources:
+    for detail_index, detail in enumerate(evidence_sources):
         detail_item_code = detail.get('收费项目代码') or item_code or detail.get('ORDER_ITEM_CODE') or ''
-        charge_date = detail.get('收费日期') or ''
+        charge_detail_id = detail.get('收费明细主键') or detail.get('PRM_KEY') or ''
+        item_id = _build_charge_item_id(
+            result.rule.rule_id,
+            task.mdc_org_cd,
+            result.hospitalization_id,
+            charge_detail_id,
+            detail.get('收费日期'),
+            detail_item_code,
+            detail.get('收费明细索引', detail_index),
+            result.id,
+        )
+
         clue_evidence.append({
-            # 不能用 Result.id、收费报告数组下标或数量/金额生成 itemId。
-            'itemId': _build_charge_item_id(
-                result.rule.rule_id,
-                task.mdc_org_cd,
-                result.hospitalization_id,
-                detail_item_code,
-                charge_date,
-            ),
+            'itemId': item_id,
             'hospitalizationId': result.hospitalization_id,
             'dischargeDate': result.discharge_date.strftime('%Y-%m-%d') if result.discharge_date else None,
             'violationItemGenericName': result.rule.drug_name or '',
             'violationItemName': detail.get('收费项目名称') or item_name,
             'violationItemCode': detail_item_code,
-            'chargeDate': charge_date,
+            'chargeDate': detail.get('收费日期') or '',
             'quantity': detail.get('项目数量') or detail.get('数量') or '',
             'unitPrice': detail.get('项目单价') or '',
             'amount': detail.get('项目费用') or detail.get('金额') or '',
@@ -206,8 +243,10 @@ def _build_clue(result, diagnosis_list=None):
 
     return {
         '_internalResultId': result.id,
-        'externalClueId': f'{source_system}_{rule_code}_{org_code}_{result.hospitalization_id}',
-        'sourceSystem': source_system,
+        'externalClueId': _build_external_clue_id(
+            rule_code, org_code, result.hospitalization_id
+        ),
+        'sourceSystem': _SOURCE_SYSTEM,
         'clueType': 'STRUCTURED',
         'ruleCode': rule_code,
         'ruleName': rule_name,
@@ -216,7 +255,7 @@ def _build_clue(result, diagnosis_list=None):
         'orgName': '海南医科大学第一附属医院',
         'evidenceType': 'SINGLE' if len(clue_evidence) == 1 else 'MULTIPLE',
         'evidenceCount': len(clue_evidence),
-        'cluePrompt': result.reason or '',
+        'cluePrompt': _build_clue_prompt(result.hospitalization_id, result.reason),
         'clueEvidence': clue_evidence,
     }
 
@@ -234,6 +273,22 @@ def _merge_clues(clues):
 
     merged_clues = list(merged_by_external_id.values())
     for clue in merged_clues:
+        # 不删除收费证据。对历史数据中仍冲突的 itemId 追加稳定的出现序号，
+        # 既满足上报端的唯一性要求，又保留每一笔收费明细以便定位和复核。
+        used_item_ids = set()
+        for evidence_index, evidence in enumerate(clue['clueEvidence'], start=1):
+            base_item_id = _item_id_part(
+                evidence.get('itemId') if isinstance(evidence, dict) else None,
+                f'NO_ITEM_ID_{evidence_index}',
+            )
+            item_id = base_item_id
+            occurrence = 2
+            while item_id in used_item_ids:
+                item_id = f'{base_item_id}_{occurrence}'
+                occurrence += 1
+            evidence['itemId'] = item_id
+            used_item_ids.add(item_id)
+
         evidence_count = len(clue['clueEvidence'])
         clue['evidenceCount'] = evidence_count
         clue['evidenceType'] = 'SINGLE' if evidence_count == 1 else 'MULTIPLE'
