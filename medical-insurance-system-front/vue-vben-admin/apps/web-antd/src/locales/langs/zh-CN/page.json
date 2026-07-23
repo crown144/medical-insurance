@@ -109,5 +109,10 @@
     "deleteSuccess": "删除成功",
     "createSuccess": "新增成功",
     "updateSuccess": "更新成功"
+  },
+  "sqlAnalysis": {
+    "title": "SQL分析",
+    "management": "SQL管理",
+    "execution": "SQL执行"
   }
 }

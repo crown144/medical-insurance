@@ -3,7 +3,7 @@
     "login": "Login",
     "register": "Register",
     "codeLogin": "Code Login",
-    "qrcodeLogin": "Qr Code Login",
+    "qrcodeLogin": "QR Code Login",
     "forgetPassword": "Forget Password",
     "profile": "Profile"
   },
@@ -109,5 +109,10 @@
     "deleteSuccess": "Deleted successfully",
     "createSuccess": "Created successfully",
     "updateSuccess": "Updated successfully"
+  },
+  "sqlAnalysis": {
+    "title": "SQL Analysis",
+    "management": "SQL Management",
+    "execution": "SQL Execution"
   }
 }
