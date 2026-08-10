@@ -2,8 +2,11 @@ import logging
 import json
 import os
 import random
+import re
+from datetime import datetime
 from celery import shared_task
 from django.utils import timezone
+from django.utils.dateparse import parse_date, parse_datetime
 from django.db import transaction, close_old_connections
 from django.conf import settings
 from engine.engine import RuleEngine # 导入我们改造后的引擎
@@ -21,6 +24,154 @@ from engine.engine import RuleEngine
 from engine.over_standard_v2 import check_over_standard
 from engine.duplicate_billing import detect_duplicate_charges 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_discharge_date(patient_json):
+    """返回可写入 Result.discharge_date 的标准时间；无法识别时返回空值。"""
+    if not isinstance(patient_json, dict):
+        return None
+
+    discharge_record = patient_json.get('出院记录') or {}
+    basic_info = patient_json.get('基本信息') or {}
+    raw_value = (
+        discharge_record.get('出院日期')
+        if isinstance(discharge_record, dict) else None
+    ) or (
+        basic_info.get('出院日期')
+        if isinstance(basic_info, dict) else None
+    )
+    if not raw_value:
+        return None
+
+    if isinstance(raw_value, datetime):
+        parsed = raw_value
+    else:
+        text = str(raw_value).strip()
+        if not text or text.lower() in {'xxx', 'none', 'null', '文本中未提及该内容'}:
+            return None
+
+        parsed = parse_datetime(text)
+        if parsed is None:
+            parsed_date = parse_date(text)
+            if parsed_date is not None:
+                parsed = datetime.combine(parsed_date, datetime.min.time())
+
+        if parsed is None:
+            chinese_match = re.fullmatch(
+                r'(\d{4})年(\d{1,2})月(\d{1,2})日'
+                r'(?:\s*(\d{1,2})时(?:(\d{1,2})分)?(?:(\d{1,2})秒)?)?',
+                text,
+            )
+            if chinese_match:
+                year, month, day, hour, minute, second = chinese_match.groups()
+                try:
+                    parsed = datetime(
+                        int(year), int(month), int(day),
+                        int(hour or 0), int(minute or 0), int(second or 0),
+                    )
+                except ValueError:
+                    parsed = None
+
+        if parsed is None:
+            logger.warning('病历出院日期格式无法识别，结果将不写入出院日期：%r', raw_value)
+            return None
+
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def _fallback_task_self_reflection(requested_count, processed_count, rule_count, total_violation_count):
+    """模型输出不合规或不可用时，按任务统计生成固定格式的中文自检结果。"""
+    needs_attention = requested_count != processed_count or rule_count <= 0
+    conclusion = '提示关注。' if needs_attention else '通过。'
+    verification = (
+        f'计划处理{requested_count}例，实际处理{processed_count}例，'
+        f'关联规则{rule_count}条，已固化违规{total_violation_count}条。'
+    )
+    suggestion = '请人工确认任务配置与执行结果。' if needs_attention else '无需额外处理。'
+    return f'结论：{conclusion}\n核验：{verification}\n建议：{suggestion}'
+
+
+def _normalize_task_self_reflection(raw_text, requested_count, processed_count, rule_count, total_violation_count):
+    """只接受三行中文自检结论，屏蔽模型可能返回的推理过程或英文内容。"""
+    fallback = _fallback_task_self_reflection(
+        requested_count, processed_count, rule_count, total_violation_count
+    )
+    if not raw_text:
+        return fallback
+
+    labels = {}
+    for raw_line in str(raw_text).replace('\r', '').split('\n'):
+        line = raw_line.strip().replace('**', '')
+        matched = re.match(r'^(?:[-*]\s*)?(结论|核验|建议)\s*[：:]\s*(.+)$', line)
+        if not matched:
+            continue
+        label, value = matched.groups()
+        value = value.strip()
+        # 跳过模型复述提示词时常见的“通过 或 提示关注”“说明已核验”等说明性行。
+        if not value or len(value) > 180 or re.search(r'[A-Za-z]', value):
+            continue
+        if label == '结论' and value not in ('通过', '通过。', '提示关注', '提示关注。'):
+            continue
+        labels[label] = value
+
+    if set(labels) != {'结论', '核验', '建议'}:
+        return fallback
+
+    result = f"结论：{labels['结论']}\n核验：{labels['核验']}\n建议：{labels['建议']}"
+    if len(result) > 300 or re.search(r'[A-Za-z]', result):
+        return fallback
+    return result
+
+
+def build_task_self_reflection(task, processed_count, total_violation_count, rule_count):
+    """生成任务级轻量计算自检文本；仅保存三行中文结果，不保存模型推理过程。"""
+    requested_count = len(task.hospitalization_ids or [])
+    prompt = f"""你是医保审查任务的计算自检助手。仅依据以下任务统计进行辅助核验，不得重算病历、不得判断新增违规、不得修改既有结论。
+
+任务ID：{task.id}
+审查方案：{', '.join(task.selected_schemas or []) or '未选择'}
+关联规则数：{rule_count}
+计划处理病例数：{requested_count}
+实际处理病例数：{processed_count}
+已固化违规数：{total_violation_count}
+
+【严格输出限制】
+只输出中文最终结果，且必须恰好三行。不得输出英文、分析、推理过程、思考过程、草稿、标题、Markdown 或任何额外文字。
+结论：通过。或 提示关注。
+核验：写明计划与实际病例数、关联规则数的核验结果。
+建议：无异常写“无需额外处理。”；病例数不一致或规则数为零时写“请人工确认任务配置与执行结果。”
+"""
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=getattr(settings, 'RULE_IMPORT_LLM_API_KEY', '') or 'EMPTY',
+            base_url=getattr(settings, 'RULE_IMPORT_LLM_BASE_URL', ''),
+            timeout=20,
+        )
+        response = client.chat.completions.create(
+            model=getattr(settings, 'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen'),
+            messages=[
+                {
+                    'role': 'system',
+                    'content': '你只输出最终三行中文结论，绝不输出分析、推理、思考过程或英文。',
+                },
+                {'role': 'user', 'content': prompt},
+            ],
+            temperature=0,
+            max_tokens=180,
+        )
+        reflection = (response.choices[0].message.content or '').strip()
+        return _normalize_task_self_reflection(
+            reflection, requested_count, processed_count, rule_count, total_violation_count
+        )
+    except Exception as exc:  # noqa: BLE001 - 自检是辅助能力，必须隔离模型故障
+        logger.warning('任务 %s 计算自检未生成: %s', task.id, exc)
+        return _fallback_task_self_reflection(
+            requested_count, processed_count, rule_count, total_violation_count
+        )
 
 
 def get_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
@@ -110,6 +261,7 @@ def run_audit_task(task_id):
             task.started_at = timezone.now()
             task.completed_at = None
             task.summary = "任务开始执行..."
+            task.self_reflection = ''
             task.save()
 
         logger.info(f"开始执行任务 ID: {task.id}, 名称: {task.name}")
@@ -166,8 +318,7 @@ def run_audit_task(task_id):
                                 )
                                 
                                 with transaction.atomic():
-                                    discharge_date_str = patient_json.get('出院记录', {}).get('出院日期') or patient_json.get('基本信息', {}).get('出院日期')
-                                    cleaned_discharge_date = discharge_date_str if discharge_date_str and discharge_date_str not in ['xxx', '文本中未提及该内容'] else None
+                                    cleaned_discharge_date = _normalize_discharge_date(patient_json)
                                     
                                     # 新格式使用 reason，旧格式使用 problem
                                     reason = res.get('reason', res.get('problem', 'N/A'))
@@ -220,8 +371,7 @@ def run_audit_task(task_id):
                                     }
                                 )
                                 with transaction.atomic():
-                                    discharge_date_str = patient_json.get('出院记录', {}).get('出院日期') or patient_json.get('基本信息', {}).get('出院日期')
-                                    cleaned_discharge_date = discharge_date_str if discharge_date_str and discharge_date_str not in ['xxx', '文本中未提及该内容'] else None
+                                    cleaned_discharge_date = _normalize_discharge_date(patient_json)
 
                                     reason = res.get('reason', res.get('problem', 'N/A'))
 
@@ -275,8 +425,7 @@ def run_audit_task(task_id):
                                     }
                                 )
                                 with transaction.atomic():
-                                    discharge_date_str = patient_json.get('出院记录', {}).get('出院日期') or patient_json.get('基本信息', {}).get('出院日期')
-                                    cleaned_discharge_date = discharge_date_str if discharge_date_str and discharge_date_str not in ['xxx', '文本中未提及该内容'] else None
+                                    cleaned_discharge_date = _normalize_discharge_date(patient_json)
 
                                     reason = res.get('reason', res.get('problem', 'N/A'))
 
@@ -302,6 +451,63 @@ def run_audit_task(task_id):
                             except Exception as db_error:
                                 logger.error(f"保存'重复收费'违规结果时出错: {db_error}", exc_info=True)
                 
+                # --- 模块四：通用执行“其他类型 / 挂床住院”规则 ---
+                if {'其他类型', '挂床住院'}.intersection(task.selected_schemas):
+                    from engine.over_standard_v2 import execute_db_rules
+                    generic_audit_results = []
+                    target_rules = list(task.rules.all())
+                    if '其他类型' in task.selected_schemas:
+                        logger.info('为 %s 开始执行其他类型审核 (DB Driven)...', hos_id)
+                        generic_audit_results += execute_db_rules(
+                            patient_json, rule_type='其他类型', target_rules=target_rules,
+                        )
+                        # 兼容旧版本导入时保存为“其他”的规则。
+                        generic_audit_results += execute_db_rules(
+                            patient_json, rule_type='其他', target_rules=target_rules,
+                        )
+                    if '挂床住院' in task.selected_schemas:
+                        logger.info('为 %s 开始执行挂床住院审核 (DB Driven)...', hos_id)
+                        generic_audit_results += execute_db_rules(
+                            patient_json, rule_type='挂床住院', target_rules=target_rules,
+                        )
+                    other_audit_results = generic_audit_results
+                    for res in other_audit_results:
+                        is_violation = not res.get('passed', True) or res.get('violation', False)
+                        if not is_violation:
+                            continue
+                        try:
+                            rule_info = res.get('rule', {})
+                            rule_id = res.get('ruleId') or rule_info.get('rule_id') or 'UNKNOWN_RULE'
+                            rule_obj, _ = Rule.objects.get_or_create(
+                                rule_id=rule_id,
+                                defaults={
+                                    'drug_name': rule_info.get('drug_name', '其他类型规则'),
+                                    'description': rule_info.get('description', ''),
+                                    'type': rule_info.get('type', '其他类型'),
+                                },
+                            )
+                            with transaction.atomic():
+                                cleaned_discharge_date = _normalize_discharge_date(patient_json)
+                                db_result = Result.objects.create(
+                                    task=task,
+                                    rule=rule_obj,
+                                    hospitalization_id=hos_id,
+                                    reason=str(res.get('reason', res.get('problem', 'N/A'))),
+                                    violation_item=json.dumps(
+                                        res.get('item', {}), ensure_ascii=False, default=str
+                                    ),
+                                    discharge_date=cleaned_discharge_date,
+                                )
+                                for hl in res.get('highlights', []):
+                                    Highlight.objects.create(
+                                        result=db_result,
+                                        field_path=hl.get('field_path', 'N/A'),
+                                        highlighted_text=str(hl.get('highlighted_text', '')),
+                                    )
+                                total_violation_count += 1
+                        except Exception as db_error:
+                            logger.error('保存其他类型违规结果时出错: %s', db_error, exc_info=True)
+
                 processed_count += 1
 
             except Exception as e:
@@ -309,11 +515,18 @@ def run_audit_task(task_id):
                 continue
         
         # --- 3. 任务收尾 ---
+        self_reflection = build_task_self_reflection(
+            task=task,
+            processed_count=processed_count,
+            total_violation_count=total_violation_count,
+            rule_count=len(all_rules_for_task),
+        )
         with transaction.atomic():
             # 重新获取 task 对象，以避免并发问题和状态陈旧
             task_to_complete = Task.objects.get(id=task_id)
             task_to_complete.status = 'completed'
             task_to_complete.summary = f"任务完成。共处理 {processed_count}/{len(task.hospitalization_ids)} 个病例，发现 {total_violation_count} 项违规。"
+            task_to_complete.self_reflection = self_reflection
             task_to_complete.save()
 
     except Task.DoesNotExist:

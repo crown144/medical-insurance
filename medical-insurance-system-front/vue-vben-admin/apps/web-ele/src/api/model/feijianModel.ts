@@ -144,6 +144,18 @@ export interface AlignmentResult {
   matchReasons: string[];
 }
 
+export interface GeneratedIndicatorCandidate {
+  source_record_ids: number[];
+  source_hospitalization_nos: string[];
+  rule_name: string;
+  description: string;
+  type: string;
+  rule_text: string;
+  rule_code: string;
+  validation: { valid: boolean; errors: string[] };
+  generation_message?: string;
+}
+
 export interface AlignmentSummary {
   alignmentRate: number;
   diffCount: number;

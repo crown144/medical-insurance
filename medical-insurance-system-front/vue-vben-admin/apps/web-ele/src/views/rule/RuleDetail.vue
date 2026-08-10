@@ -27,7 +27,9 @@ type RuleType =
   | '超限定用药'
   | '重复收费'
   | '过度医疗'
-  | '虚记费用';
+  | '虚记费用'
+  | '挂床住院'
+  | '其他类型';
 
 const props = defineProps<{ ruleType?: RuleType }>();
 const router = useRouter();
@@ -39,6 +41,8 @@ const ruleTypeToRouteName: Record<RuleType, string> = {
   重复收费: 'RuleDuplicateCharge',
   过度医疗: 'RuleOverMedical',
   虚记费用: 'RuleFakeFee',
+  挂床住院: 'RuleHangingBed',
+  其他类型: 'RuleOther',
 };
 
 /**
@@ -140,7 +144,9 @@ const fetchData = async () => {
     const params = {
       page: currentPage.value,
       page_size: pageSize.value,
-      type: ruleTypeSelect.value, // 按类型筛选
+      // “其他类型”同时展示旧版本保存为“其他”的规则。
+      type: ruleTypeSelect.value === '其他类型' ? undefined : ruleTypeSelect.value,
+      type__in: ruleTypeSelect.value === '其他类型' ? '其他类型,其他' : undefined,
       search: keyword.value, // 搜索关键词
     };
     const res = await getRuleList(params);
@@ -504,6 +510,8 @@ function formatParams(params: any) {
           <el-option label="超标准收费" value="超标准收费" />
           <el-option label="过度医疗" value="过度医疗" />
           <el-option label="虚记费用" value="虚记费用" />
+          <el-option label="挂床住院" value="挂床住院" />
+          <el-option label="其他类型" value="其他类型" />
         </el-select>
 
         <el-input
@@ -671,6 +679,8 @@ function formatParams(params: any) {
             <el-option label="超标准收费" value="超标准收费" />
             <el-option label="过度医疗" value="过度医疗" />
             <el-option label="虚记费用" value="虚记费用" />
+          <el-option label="挂床住院" value="挂床住院" />
+          <el-option label="其他类型" value="其他类型" />
           </el-select>
         </el-form-item>
 

@@ -24,7 +24,7 @@ RULE_TYPE_MAP = {
     "PRICE_LIMIT": "超标准收费",
     "CONSUMABLE_RESTRICTION": "耗材超限定",
     "OVER_EXAMINATION": "过度医疗",
-    "OTHER": "其他",
+    "OTHER": "其他类型",
 }
 
 
@@ -86,7 +86,7 @@ def import_to_rule_library(task, rule_ids=None, select_all=False):
 
         # 生成稳定且唯一的业务规则号
         rule_id = f"imp_{task.id}_{er.seq or er.id}"
-        rule_type_cn = RULE_TYPE_MAP.get(er.rule_type, er.rule_type or "其他")
+        rule_type_cn = RULE_TYPE_MAP.get(er.rule_type, "其他类型")
 
         Rule.objects.update_or_create(
             rule_id=rule_id,

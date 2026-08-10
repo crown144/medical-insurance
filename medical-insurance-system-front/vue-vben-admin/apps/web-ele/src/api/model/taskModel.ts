@@ -15,6 +15,7 @@ export interface TaskItem {
   hospitalization_ids: string[];
   mdc_org_cd?: string;
   summary: null | string;
+  self_reflection?: string;
   created_at: string;
   started_at: null | string;
   completed_at: null | string;

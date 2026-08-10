@@ -30,10 +30,10 @@ class TaskSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Task
-        fields = ['id', 'name', 'status', 'hospitalization_ids', 'mdc_org_cd', 'summary',
+        fields = ['id', 'name', 'status', 'hospitalization_ids', 'mdc_org_cd', 'summary', 'self_reflection',
                   'created_at', 'started_at', 'completed_at', 'rules',
                   'rule_ids', 'selectedSchemas', 'repeatChargingChildCodes', 'repeatChargingPairs']
-        read_only_fields = ['status', 'summary', 'created_at', 'started_at', 'completed_at', 'rules']
+        read_only_fields = ['status', 'summary', 'self_reflection', 'created_at', 'started_at', 'completed_at', 'rules']
 
     def create(self, validated_data):
         # 1. 从验证数据中安全地 pop 出 'rule_ids'

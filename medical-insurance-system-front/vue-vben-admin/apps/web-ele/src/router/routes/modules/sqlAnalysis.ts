@@ -7,7 +7,7 @@ const sqlAnalysis: RouteRecordRaw = {
   name: 'SqlAnalysisCenter',
   component: BasicLayout,
   meta: {
-    title: 'SQL分析',
+    title: 'SQL类规则',
     icon: 'mdi:database-search-outline',
     order: 35,
   },
@@ -18,7 +18,7 @@ const sqlAnalysis: RouteRecordRaw = {
       name: 'SqlAnalysisManagement',
       component: () => import('#/views/sql-analysis/SqlManagement.vue'),
       meta: {
-        title: 'SQL管理',
+        title: '规则管理',
         icon: 'mdi:code-tags',
       },
     },
@@ -27,7 +27,7 @@ const sqlAnalysis: RouteRecordRaw = {
       name: 'SqlAnalysisExecution',
       component: () => import('#/views/sql-analysis/SqlExecution.vue'),
       meta: {
-        title: 'SQL执行',
+        title: '任务执行',
         icon: 'mdi:play-circle-outline',
       },
     },

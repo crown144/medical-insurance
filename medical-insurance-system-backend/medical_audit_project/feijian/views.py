@@ -10,18 +10,43 @@ from tasks.models import Task
 from tasks.serializers import TaskSerializer
 from tasks.tasks import run_audit_task
 from rules.models import Rule
+from rules.services import AgentAService
 
 from .models import FeiJianImportBatch, FeiJianRawRecord
 from .serializers import (
     BuildAuditTaskSerializer,
     ColumnMappingSerializer,
+    ConfirmGeneratedIndicatorsSerializer,
     FeiJianImportBatchSerializer,
     FeiJianRawRecordSerializer,
     FileUploadSerializer,
     PreviewRequestSerializer,
+    GenerateIndicatorsSerializer,
 )
-from .services.alignment import align_batch_results
+from .services.alignment import UNMATCHED, align_batch_results, canonical_category, normalize_text
 from .services.importer import FeiJianImporter
+
+
+def _suggest_rule_name(issue_category, issue_description):
+    """为候选规则提供可人工编辑的初始名称。"""
+    category = (issue_category or '').strip()
+    description = (issue_description or '').strip()
+    if category and category not in {'其他', '其他问题', '违规', '问题'}:
+        return category[:255]
+    return (description or '飞检新增指标')[:255]
+
+
+def _build_indicator_rule_text(*, issue_category, issue_description):
+    """把飞检问题表达为规则编译器可理解、但不虚构条件的自然语言。"""
+    category = (issue_category or '未分类问题').strip()
+    description = (issue_description or '').strip()
+    return (
+        '请根据以下飞检发现生成一条可执行的医保审查规则。'
+        '只能依据问题描述中明确出现的项目、次数、金额、日期、诊断或病历字段构造判断；'
+        '描述不够明确时，应保守处理，不得虚构阈值或医学条件。\n'
+        f'飞检问题类别：{category}\n'
+        f'飞检问题描述：{description}'
+    )
 
 
 class StandardPagination(PageNumberPagination):
@@ -178,6 +203,145 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             'total_pages': (total + page_size - 1) // page_size if total else 0,
         }
         return Response(result)
+
+    @action(detail=True, methods=['post'], url_path='generate-indicators')
+    def generate_indicators(self, request, pk=None):
+        """把选中的“仅飞检发现”项转换为待人工确认的新规则候选。"""
+        batch = self.get_object()
+        serializer = GenerateIndicatorsSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        record_ids = list(dict.fromkeys(serializer.validated_data['record_ids']))
+        task_id = serializer.validated_data.get('task_id')
+        alignment = align_batch_results(batch, task_id=task_id, use_llm=False)
+        unmatched_ids = {
+            item.get('feijianRecordId')
+            for item in alignment.get('items', [])
+            if item.get('matchStatus') == UNMATCHED and item.get('feijianRecordId')
+        }
+        invalid_ids = sorted(set(record_ids) - unmatched_ids)
+        if invalid_ids:
+            return Response(
+                {'record_ids': [f'记录 {", ".join(map(str, invalid_ids))} 不是“仅飞检发现”项，不能生成新指标。']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        records = list(batch.records.filter(id__in=record_ids).order_by('row_index', 'id'))
+        found_ids = {record.id for record in records}
+        missing_ids = sorted(set(record_ids) - found_ids)
+        if missing_ids:
+            return Response(
+                {'record_ids': [f'当前批次不存在记录：{", ".join(map(str, missing_ids))}']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 同一批次中相同问题只生成一条候选规则，避免重复入库。
+        groups = {}
+        for record in records:
+            issue_text = (record.issue_description or record.issue_category or '').strip()
+            group_key = normalize_text(f'{record.issue_category} {issue_text}') or str(record.id)
+            groups.setdefault(group_key, []).append(record)
+
+        candidates = []
+        for grouped_records in groups.values():
+            representative = grouped_records[0]
+            issue_description = (representative.issue_description or representative.issue_category or '').strip()
+            issue_category = (representative.issue_category or '').strip()
+            rule_type = canonical_category(f'{issue_category} {issue_description}') or '其他类型'
+            rule_name = _suggest_rule_name(issue_category, issue_description)
+            rule_text = _build_indicator_rule_text(
+                issue_category=issue_category,
+                issue_description=issue_description,
+            )
+            candidate = {
+                'source_record_ids': [record.id for record in grouped_records],
+                'source_hospitalization_nos': [record.hospitalization_no for record in grouped_records],
+                'rule_name': rule_name,
+                'description': issue_description,
+                'type': rule_type,
+                'rule_text': rule_text,
+                'rule_code': '',
+                'validation': {'valid': False, 'errors': []},
+            }
+            try:
+                generated = AgentAService.build(rule_text)
+                candidate['rule_code'] = generated.generated_code
+                candidate['validation'] = generated.validation
+                candidate['generation_message'] = '模型已生成候选执行函数，请人工复核后入库。'
+            except Exception as exc:
+                candidate['generation_message'] = f'模型生成失败：{str(exc)}'
+                candidate['validation'] = {'valid': False, 'errors': [str(exc)]}
+            candidates.append(candidate)
+
+        return Response({
+            'batch_id': batch.id,
+            'task_id': alignment.get('task_id'),
+            'candidates': candidates,
+            'message': '候选指标仅供人工复核；确认入库后默认停用。',
+        })
+
+    @action(detail=True, methods=['post'], url_path='confirm-generated-indicators')
+    def confirm_generated_indicators(self, request, pk=None):
+        """将人工确认的飞检候选指标写入正式规则库，始终默认停用。"""
+        batch = self.get_object()
+        serializer = ConfirmGeneratedIndicatorsSerializer(data=request.data or {})
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        created_rules = []
+        errors = []
+        with transaction.atomic():
+            for index, candidate in enumerate(serializer.validated_data['candidates'], start=1):
+                record_ids = candidate.get('source_record_ids') or []
+                try:
+                    record_ids = sorted({int(value) for value in record_ids})
+                except (TypeError, ValueError):
+                    record_ids = []
+                source_records = list(batch.records.filter(id__in=record_ids).order_by('id'))
+                if not source_records or len(source_records) != len(record_ids):
+                    errors.append({'index': index, 'error': '来源飞检记录无效或不属于当前批次。'})
+                    continue
+
+                rule_name = str(candidate.get('rule_name') or '').strip()
+                description = str(candidate.get('description') or '').strip()
+                rule_type = str(candidate.get('type') or '其他类型').strip()
+                rule_code = str(candidate.get('rule_code') or '').strip()
+                if not rule_name or not description or not rule_code:
+                    errors.append({'index': index, 'error': '规则名称、规则描述和执行函数均不能为空。'})
+                    continue
+                validation = AgentAService.validate_code(rule_code)
+                if not validation.get('valid'):
+                    errors.append({'index': index, 'error': '执行函数校验失败。', 'details': validation.get('errors', [])})
+                    continue
+
+                source_ids = ','.join(str(record.id) for record in source_records)
+                rule_id = f'FJ-{batch.id}-{source_records[0].id}'
+                source_note = f'【飞检自动生成候选｜批次{batch.id}｜原始记录{source_ids}｜默认停用】'
+                rule_obj, created = Rule.objects.get_or_create(
+                    rule_id=rule_id,
+                    defaults={
+                        'drug_name': rule_name[:255],
+                        'description': f'{description}\n{source_note}',
+                        'type': rule_type[:50],
+                        'rule_code': rule_code,
+                        'status': False,
+                    },
+                )
+                created_rules.append({
+                    'id': rule_obj.id,
+                    'ruleId': rule_obj.rule_id,
+                    'ruleName': rule_obj.drug_name,
+                    'created': created,
+                    'enabled': rule_obj.status,
+                })
+
+        response_status = status.HTTP_201_CREATED if created_rules else status.HTTP_400_BAD_REQUEST
+        return Response({
+            'created_rules': created_rules,
+            'errors': errors,
+            'message': '已入库的候选规则均为停用状态，请在规则库复核后手工启用。',
+        }, status=response_status)
 
 
 class FeiJianRawRecordViewSet(viewsets.ReadOnlyModelViewSet):

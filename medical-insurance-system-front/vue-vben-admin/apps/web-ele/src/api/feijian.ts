@@ -129,3 +129,28 @@ export async function alignFeiJianResultsApi(
   );
   return response.data;
 }
+
+
+// ==================== 飞检新增指标 ====================
+
+export async function generateFeiJianIndicatorsApi(
+  batchId: number,
+  data: { record_ids: number[]; task_id?: number },
+) {
+  const response = await baseRequestClient.post<any>(
+    `/feijian/import-batches/${batchId}/generate-indicators/`,
+    data,
+  );
+  return response.data;
+}
+
+export async function confirmFeiJianGeneratedIndicatorsApi(
+  batchId: number,
+  data: { candidates: any[] },
+) {
+  const response = await baseRequestClient.post<any>(
+    `/feijian/import-batches/${batchId}/confirm-generated-indicators/`,
+    data,
+  );
+  return response.data;
+}

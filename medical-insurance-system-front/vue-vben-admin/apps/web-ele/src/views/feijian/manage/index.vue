@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import type {
   AlignResultsResponse,
   AlignmentResult,
@@ -7,21 +7,24 @@ import type {
   FeiJianRawRecord,
   FeiJianStats,
   PreviewRecord,
+  GeneratedIndicatorCandidate,
 } from '../../../api/model/feijianModel';
 
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { DataAnalysis, Refresh, Search, Upload } from '@element-plus/icons-vue';
+import { DataAnalysis, MagicStick, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
 import {
   alignFeiJianResultsApi,
   buildFeiJianAuditTaskApi,
   confirmFeiJianImportApi,
+  confirmFeiJianGeneratedIndicatorsApi,
   getImportBatchesApi,
   getFeiJianStatsApi,
   getRawRecordsApi,
+  generateFeiJianIndicatorsApi,
   previewFeiJianImportApi,
   uploadFeiJianFileApi,
 } from '../../../api/feijian';
@@ -93,6 +96,7 @@ const auditSchemaOptions = [
   { label: '超限定用药', value: '超限定用药' },
   { label: '重复收费', value: '重复收费' },
   { label: '超标准收费', value: '超标准收费' },
+  { label: '挂床住院', value: '挂床住院' },
 ];
 const successfulBatches = computed(() =>
   importBatches.value.filter((batch) => batch.status === 'success'),
@@ -125,6 +129,14 @@ const selectedAlignmentDetail = ref<AlignmentResult | null>(null);
 const selectedAlignmentBatch = computed(() =>
   successfulBatches.value.find((batch) => batch.id === alignmentBatchId.value),
 );
+const alignmentSelectedRows = ref<AlignmentResult[]>([]);
+const indicatorGenerating = ref(false);
+const indicatorSaving = ref(false);
+const indicatorDialogVisible = ref(false);
+const generatedIndicators = ref<GeneratedIndicatorCandidate[]>([]);
+const indicatorTypeOptions = [
+  '超限定用药', '重复收费', '超标准收费', '过度医疗', '虚记费用', '挂床住院', '其他类型',
+];
 
 // ==================== 工具函数 ====================
 
@@ -403,6 +415,7 @@ async function handleAlignResults(resetPage = false) {
     });
     alignmentResult.value = result;
     alignmentItems.value = result.items;
+    alignmentSelectedRows.value = [];
     alignmentTotal.value = result.pagination.total;
     stats.value.alignmentRate = result.summary.alignmentRate;
     stats.value.diffCount = result.summary.diffCount;
@@ -420,6 +433,77 @@ async function handleAlignResults(resetPage = false) {
 function showAlignmentDetail(row: AlignmentResult) {
   selectedAlignmentDetail.value = row;
   alignmentDetailVisible.value = true;
+}
+
+function canGenerateIndicator(row: AlignmentResult) {
+  return row.matchStatus === 'unmatched' && !!row.feijianRecordId;
+}
+
+function handleAlignmentSelectionChange(rows: AlignmentResult[]) {
+  alignmentSelectedRows.value = rows.filter(canGenerateIndicator);
+}
+
+function getAlignmentTaskId() {
+  const taskIdText = alignmentTaskId.value.trim();
+  const taskId = taskIdText ? Number(taskIdText) : undefined;
+  return taskId && !Number.isNaN(taskId) ? taskId : undefined;
+}
+
+async function handleGenerateIndicators(rows = alignmentSelectedRows.value) {
+  if (!alignmentBatchId.value) {
+    ElMessage.warning('请先选择飞检导入批次并完成结果对齐');
+    return;
+  }
+  const recordIds = [...new Set(rows
+    .filter(canGenerateIndicator)
+    .map((row) => row.feijianRecordId as number))];
+  if (recordIds.length === 0) {
+    ElMessage.warning('请勾选“仅飞检发现”的问题后再生成指标');
+    return;
+  }
+  indicatorGenerating.value = true;
+  try {
+    const result = await generateFeiJianIndicatorsApi(alignmentBatchId.value, {
+      record_ids: recordIds,
+      task_id: getAlignmentTaskId(),
+    });
+    generatedIndicators.value = result.candidates || [];
+    indicatorDialogVisible.value = generatedIndicators.value.length > 0;
+    if (generatedIndicators.value.length > 0) {
+      ElMessage.success(`已生成 ${generatedIndicators.value.length} 条候选指标，请复核后入库`);
+    } else {
+      ElMessage.warning('未生成可入库的候选指标');
+    }
+  } catch (error: any) {
+    const msg = error?.response?.data?.record_ids?.[0]
+      || error?.response?.data?.error || error?.message || '模型生成指标失败';
+    ElMessage.error(msg);
+  } finally {
+    indicatorGenerating.value = false;
+  }
+}
+
+async function handleConfirmGeneratedIndicators() {
+  if (!alignmentBatchId.value || generatedIndicators.value.length === 0) return;
+  // 用户可在弹窗内修正模型输出；后台入库前会再次校验执行函数。
+  indicatorSaving.value = true;
+  try {
+    const result = await confirmFeiJianGeneratedIndicatorsApi(alignmentBatchId.value, {
+      candidates: generatedIndicators.value,
+    });
+    const count = result.created_rules?.filter((item: any) => item.created).length || 0;
+    const existing = result.created_rules?.length - count || 0;
+    ElMessage.success(`已入库 ${count} 条候选指标${existing ? `，${existing} 条已存在` : ''}；均为停用状态`);
+    indicatorDialogVisible.value = false;
+    generatedIndicators.value = [];
+    alignmentSelectedRows.value = [];
+  } catch (error: any) {
+    const msg = error?.response?.data?.errors?.[0]?.error
+      || error?.response?.data?.error || error?.message || '候选指标入库失败';
+    ElMessage.error(msg);
+  } finally {
+    indicatorSaving.value = false;
+  }
 }
 
 function openSystemResultDetail(row?: AlignmentResult | null) {
@@ -946,6 +1030,16 @@ onMounted(() => {
                     >
                       开始对齐
                     </el-button>
+                    <el-button
+                      type="warning"
+                      plain
+                      :icon="MagicStick"
+                      :loading="indicatorGenerating"
+                      :disabled="alignmentSelectedRows.length === 0"
+                      @click="handleGenerateIndicators()"
+                    >
+                      生成新指标
+                    </el-button>
                   </div>
                 </div>
               </div>
@@ -1000,7 +1094,9 @@ onMounted(() => {
                 border
                 class="task-table"
                 style="width: 100%"
+                @selection-change="handleAlignmentSelectionChange"
               >
+                <el-table-column type="selection" width="48" :selectable="canGenerateIndicator" />
                 <el-table-column prop="hospitalizationNo" label="住院号" width="150" align="center" />
                 <el-table-column prop="patientName" label="患者" width="90" align="center" />
                 <el-table-column label="飞检问题" min-width="240">
@@ -1056,6 +1152,16 @@ onMounted(() => {
                     >
                       查看
                     </el-button>
+                    <el-button
+                      v-if="canGenerateIndicator(row)"
+                      type="warning"
+                      link
+                      :icon="MagicStick"
+                      :loading="indicatorGenerating"
+                      @click="handleGenerateIndicators([row])"
+                    >
+                      生成指标
+                    </el-button>
                   </template>
                 </el-table-column>
                 <template #empty>
@@ -1078,6 +1184,68 @@ onMounted(() => {
             </div>
           </div>
         </el-tab-pane>
+
+        <el-dialog
+          v-model="indicatorDialogVisible"
+          title="模型生成新指标"
+          width="920px"
+          destroy-on-close
+        >
+          <el-alert
+            type="warning"
+            :closable="false"
+            show-icon
+            title="候选指标来自“仅飞检发现”项。请核对规则名称、描述和执行函数；入库后默认停用，不会自动参与审查。"
+            class="mb-3"
+          />
+          <div class="indicator-candidates">
+            <el-card
+              v-for="(item, index) in generatedIndicators"
+              :key="item.source_record_ids.join('-')"
+              shadow="never"
+              class="indicator-card"
+            >
+              <template #header>
+                <div class="indicator-card-title">
+                  <span>候选指标 {{ index + 1 }}</span>
+                  <el-tag :type="item.validation?.valid ? 'success' : 'danger'" effect="plain">
+                    {{ item.validation?.valid ? '执行函数校验通过' : '执行函数待修正' }}
+                  </el-tag>
+                </div>
+              </template>
+              <div class="indicator-source">
+                来源记录：{{ item.source_record_ids.join('、') }}；住院号：{{ item.source_hospitalization_nos.join('、') }}
+              </div>
+              <el-form label-position="top">
+                <div class="indicator-form-row">
+                  <el-form-item label="指标名称">
+                    <el-input v-model="item.rule_name" maxlength="255" show-word-limit />
+                  </el-form-item>
+                  <el-form-item label="规则类型">
+                    <el-select v-model="item.type" style="width: 180px">
+                      <el-option v-for="option in indicatorTypeOptions" :key="option" :label="option" :value="option" />
+                    </el-select>
+                  </el-form-item>
+                </div>
+                <el-form-item label="规则描述">
+                  <el-input v-model="item.description" type="textarea" :rows="3" />
+                </el-form-item>
+                <el-form-item label="执行函数（Python）">
+                  <el-input v-model="item.rule_code" type="textarea" :rows="12" class="code-input" />
+                  <div v-if="item.validation?.errors?.length" class="form-error">
+                    {{ item.validation.errors.join('；') }}
+                  </div>
+                </el-form-item>
+              </el-form>
+            </el-card>
+          </div>
+          <template #footer>
+            <el-button @click="indicatorDialogVisible = false">取消</el-button>
+            <el-button type="primary" :loading="indicatorSaving" @click="handleConfirmGeneratedIndicators">
+              确认入库（默认停用）
+            </el-button>
+          </template>
+        </el-dialog>
 
         <el-dialog
           v-model="alignmentDetailVisible"
@@ -1588,6 +1756,49 @@ onMounted(() => {
 .flex { display: flex; }
 .justify-end { justify-content: flex-end; }
 .gap-3 { gap: 12px; }
+
+.indicator-candidates {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 65vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.indicator-card {
+  border-color: #e8edf4;
+}
+
+.indicator-card-title,
+.indicator-form-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.indicator-form-row :deep(.el-form-item:first-child) {
+  flex: 1;
+}
+
+.indicator-source {
+  margin-bottom: 10px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.code-input :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.form-error {
+  margin-top: 6px;
+  color: #f56c6c;
+  font-size: 12px;
+}
 
 @media (max-width: 900px) {
   .tab-header {

@@ -1,0 +1,21 @@
+# 目标服务器部署配置。复制到服务器后修改。
+
+TARGET_VERSION=260723-23
+PACKAGE_DIR=/tmp/yibao-release-260723-23
+INSTALL_ROOT=/opt/yibao
+COMPOSE_PROJECT_NAME=yibao
+
+# 推荐在服务器长期保存环境配置，不随版本包覆盖。
+# 留空表示使用部署包中自带的 .env。
+SERVER_BACKEND_ENV_FILE=/opt/yibao/shared/backend.env
+SERVER_FRONTEND_ENV_FILE=/opt/yibao/shared/frontend.env
+
+# 服务器没有 hub.geekery.cn/nginx:alpine 时：
+# 0 = 停止并提示；1 = 允许 docker pull。
+ALLOW_NGINX_PULL=0
+
+# Docker 命令需要 sudo 时设为 1。
+DOCKER_USE_SUDO=0
+
+# 同版本目录已经存在时默认停止；确需覆盖部署时设为 1，旧目录会先改名备份。
+FORCE=0

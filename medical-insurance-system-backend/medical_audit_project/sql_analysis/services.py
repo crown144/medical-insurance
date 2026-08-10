@@ -5,8 +5,7 @@ from decimal import Decimal
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Tuple
 
-from django.conf import settings
-from django.db.backends.mysql.base import DatabaseWrapper
+import pymysql
 from django.utils import timezone
 
 from data_adapter.source_db import get_source_db_config
@@ -28,38 +27,25 @@ class SQLExecutionError(ValueError):
     pass
 
 
-def _normalize_source_db_settings() -> Dict[str, Any]:
-    config = get_source_db_config()
-    return {
-        'AUTOCOMMIT': True,
-        'ATOMIC_REQUESTS': False,
-        'CONN_HEALTH_CHECKS': False,
-        'CONN_MAX_AGE': 0,
-        'ENGINE': 'django.db.backends.mysql',
-        'HOST': config['host'],
-        'NAME': config['database'],
-        'OPTIONS': {
-            'charset': config['charset'],
-        },
-        'PASSWORD': config['password'],
-        'PORT': str(config['port']),
-        'TEST': {
-            'CHARSET': None,
-            'COLLATION': None,
-            'MIGRATE': True,
-            'MIRROR': None,
-            'NAME': None,
-        },
-        'TIME_ZONE': settings.TIME_ZONE,
-        'USER': config['user'],
-    }
-
 
 @contextmanager
 def source_medical_cursor():
-    connection = DatabaseWrapper(_normalize_source_db_settings(), alias='source_medical_db')
+    """使用 PyMySQL 直连源库，兼容报告为 MySQL 5.7 的 OceanBase。"""
+    config = get_source_db_config()
+    timeout_seconds = max(1, SQL_QUERY_TIMEOUT_MS // 1000)
+    connection = pymysql.connect(
+        host=config["host"],
+        port=int(config["port"]),
+        user=config["user"],
+        password=config["password"],
+        database=config["database"],
+        charset=config["charset"],
+        autocommit=True,
+        connect_timeout=10,
+        read_timeout=timeout_seconds + 5,
+        write_timeout=10,
+    )
     try:
-        connection.ensure_connection()
         with connection.cursor() as cursor:
             yield cursor
     finally:

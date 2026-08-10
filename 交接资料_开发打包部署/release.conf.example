@@ -1,0 +1,28 @@
+# 开发机打包配置。复制为 release.conf 后修改；不要把真实密钥写到本文件。
+
+PROJECT_ROOT=/home/ubuntu/yibao/260723yb
+
+# 上一版必须已经存在后端镜像 TAR；目标版本必须顺序递增。
+BASE_VERSION=260723-22
+TARGET_VERSION=260723-23
+
+# incremental：仅 backend/app 和 deploy_settings.py 改动。
+# full：requirements、Dockerfile、docker-entrypoint.sh 或系统依赖有改动。
+BACKEND_BUILD_MODE=incremental
+
+# full：保持当前交付口径，打包整个 frontend 目录。
+# deploy-only：仅打包 dist、nginx、Compose 和环境文件，体积更小。
+FRONTEND_PACKAGE_MODE=full
+
+# 当前交付方式会把 backend/.env 放入后端部署包。
+# 设为 0 可不打包真实 .env，服务器部署时必须通过共享环境文件补入。
+INCLUDE_BACKEND_ENV=1
+
+# 前端包是否包含 frontend/.env。
+INCLUDE_FRONTEND_ENV=1
+
+# 目标文件已存在时默认停止；确需重打同一版本时显式设为 1。
+FORCE=0
+
+# 完整 Docker 构建需要 Docker 权限；需 sudo 时设为 1。
+DOCKER_USE_SUDO=0

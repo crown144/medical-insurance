@@ -83,6 +83,8 @@ class AgentAService:
         tools = ['get_val', 'filter_list', 'list_contains', 'is_compare', 'submit_result']
         if any(k in rule_text for k in ['天', '日', '岁', '年', '剂量', '频次']):
             tools.append('calc_stats')
+        if any(k in rule_text for k in ['医嘱', '开立', '同一次住院', '同日', '重复']):
+            tools.append('get_order_frequency_evidence')
         if any(k in rule_text for k in ['确诊', '是否', '症状', '指征', '新发', '急性']):
             tools.append('llm_bool')
         return tools
@@ -142,6 +144,8 @@ class AgentAService:
 4. 项目级规则必须先判断适用范围：
    - `is_target` 必须基于项目名称、项目代码、药品名称、医嘱项目等标识字段。
    - `applicable = is_target`，没有使用目标项目时返回 `submit_result(is_applicable=False)` 或让 `is_applicable=False`。
+4a. 医嘱频次规则：自然语言出现“医嘱”“同一次住院医嘱”“开立次数”“医嘱频次”“同日”“短期内重复”等表述，并且规则要判断次数、重复、同一次住院/同日上限时，必须调用 `get_order_frequency_evidence(ctx, target_value, operator, field_path)`。该函数会按目标项目分别统计医嘱与收费明细：医嘱按“医嘱号/医嘱ID”去重，收费按“费用明细编号”去重，最终 `effective_items`/`effective_count` 取两侧较大值，**绝不能把两侧次数相加**。收费只是补充重复次数的证据，不替代医嘱的业务含义；收费补充事件的“医嘱下达时间”实际来自收费日期，证据中必须标明时间来源为收费日期。对于“同时开具/同时下达”规则，**不得**用收费时间推断开嘱时间，必须只基于真实医嘱时间判断。evidence 中同时保留 `order_count`、`charge_count`、`effective_count` 和 `evidence_source`，并为收费证据使用 `$.收费报告[索引]` 高亮路径。
+4b. 名称匹配：规则文本出现“包含”“同类”“规格/方法/别名”等范围性描述时使用 filter_list 的 contains；规则给出唯一且必须完全一致的项目名称或项目代码时使用 ==。
 5. 数值比较必须优先使用 `is_compare(value=..., operator=..., threshold=...)`，不要直接写 `>`、`>=`、`<`、`<=`。
 6. 费用规则要区分基础项目、加收项目、缺少基础项目、基础项目超价、加收项目超价，错误从严重到轻微排序。
 7. `llm_bool` 是昂贵语义判断，只能在硬规则无法确认时延迟调用；先做诊断编码、诊断名称、项目名称等硬逻辑匹配。
@@ -374,6 +378,18 @@ def filter_list(data_list, field_path: str, match_value, operator: str = "=="):
       - "contains": 包含匹配；match_value 可为列表，表示任一关键词命中
       - "startswith": 前缀匹配；match_value 可为列表
       - "in": 白名单匹配
+    """
+'''.strip(),
+        'get_order_frequency_evidence': '''
+def get_order_frequency_evidence(ctx, target_value, operator: str = "contains", field_path: str = "医嘱项目名称"):
+    """
+    医嘱频次的双源核验工具。返回：
+      - order_items/order_count：按医嘱号或医嘱ID去重后的目标医嘱
+      - charge_items/charge_count：按费用明细编号去重后的目标收费明细
+      - effective_items/effective_count：两侧次数较大的一侧，不能将两侧相加
+      - evidence_source："医嘱"、"收费明细"或"医嘱与收费明细"
+    对“同日/短期内”规则，收费补充事件的“医嘱下达时间”来自收费日期，
+    evidence 必须标明时间来源；“同时开具/同时下达”规则不得使用收费补充事件。
     """
 '''.strip(),
         'list_contains': '''
@@ -644,6 +660,19 @@ def json_data_schema() -> str:
       "费用类别": "xxx",
       "ORDER_NO": "xxx",
       "ORDER_ITEM_CODE": "xxx"
+    }
+  ],
+  "医嘱": [
+    {
+      "住院流水号": "xxx",
+      "医嘱号": "xxx",
+      "医嘱ID": "xxx",
+      "医嘱项目名称": "xxx",
+      "医嘱项类别": "xxx",
+      "医嘱下达时间": "xxx",
+      "医嘱开始时间": "xxx",
+      "医嘱停止时间": "xxx",
+      "状态": "xxx"
     }
   ],
   "用药信息": [

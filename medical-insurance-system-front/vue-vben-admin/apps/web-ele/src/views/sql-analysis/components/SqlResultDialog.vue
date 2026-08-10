@@ -78,11 +78,6 @@ watch(
       />
 
       <section class="panel">
-        <div class="panel__title">渲染后SQL</div>
-        <pre class="panel__code">{{ record.resultJson?.renderedSql }}</pre>
-      </section>
-
-      <section class="panel">
         <div class="panel__header">
           <div class="panel__title panel__title--plain">结果预览</div>
           <div v-if="record.resultJson?.truncated" class="panel__hint">
@@ -173,18 +168,6 @@ watch(
 .panel__hint {
   font-size: 12px;
   color: #d97706;
-}
-
-.panel__code {
-  margin: 0;
-  max-height: 220px;
-  overflow: auto;
-  padding: 16px;
-  background: #020617;
-  color: #e2e8f0;
-  font-size: 12px;
-  line-height: 1.7;
-  white-space: pre-wrap;
 }
 
 .pager-wrap {
