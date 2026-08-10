@@ -80,3 +80,22 @@ class BuildAuditTaskSerializer(serializers.Serializer):
         required=False,
     )
     execute = serializers.BooleanField(required=False, default=True)
+
+
+class GenerateIndicatorsSerializer(serializers.Serializer):
+    """从“仅飞检发现”记录生成待确认的新指标。"""
+    record_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        allow_empty=False,
+        max_length=10,
+    )
+    task_id = serializers.IntegerField(required=False, min_value=1)
+
+
+class ConfirmGeneratedIndicatorsSerializer(serializers.Serializer):
+    """人工确认后把大模型生成的候选指标写入规则库。"""
+    candidates = serializers.ListField(
+        child=serializers.DictField(),
+        allow_empty=False,
+        max_length=10,
+    )

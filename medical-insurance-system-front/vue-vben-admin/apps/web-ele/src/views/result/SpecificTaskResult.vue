@@ -2,8 +2,15 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
-import { Download, Refresh, Search, View } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import {
+  DocumentChecked,
+  Download,
+  Refresh,
+  RefreshRight,
+  Search,
+  View,
+} from '@element-plus/icons-vue';
+import { ElMessage, ElMessageBox } from 'element-plus';
 import { useUserStore } from '@vben/stores';
 
 import { baseRequestClient } from '../../api/request';
@@ -11,6 +18,7 @@ import {
   downloadTaskResultCasesApi,
   getTaskResultListApi,
 } from '../../api/result';
+import { executeTaskApi } from '../../api/task';
 
 const route = useRoute();
 const router = useRouter();
@@ -24,6 +32,10 @@ const taskName = ref(String(route.query.taskName || ''));
 
 const isLoading = ref(false);
 const isDownloadingCases = ref(false);
+const isRecalculating = ref(false);
+const taskStatus = ref('');
+const taskReflection = ref('');
+const expandedPanels = ref(['reflection']);
 const tableData = ref<any[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
@@ -41,6 +53,8 @@ const fetchTaskInfo = async () => {
   try {
     const res = await baseRequestClient.get<any>(`/tasks/${taskId.value}/`);
     taskName.value = res.data.name;
+    taskStatus.value = res.data.status || '';
+    taskReflection.value = res.data.self_reflection || '';
   } catch (error) {
     console.error(error);
   }
@@ -183,6 +197,32 @@ const downloadResultCases = async () => {
   }
 };
 
+const requestModelRecalculation = async () => {
+  if (!taskId.value || isRecalculating.value) return;
+  try {
+    await ElMessageBox.confirm(
+      '系统将按当前任务配置重新读取病历并执行规则。当前违规明细会被新计算结果替换。',
+      '确认重新计算当前指标',
+      {
+        confirmButtonText: '重新计算',
+        cancelButtonText: '取消',
+        type: 'warning',
+      },
+    );
+    isRecalculating.value = true;
+    await executeTaskApi(Number(taskId.value));
+    ElMessage.success('已重新发起计算，正在跳转至任务执行页。');
+    await router.push({
+      name: 'ExecuteRun',
+      query: { taskId: taskId.value },
+    });
+  } catch (error) {
+    if (error !== 'cancel') console.error('重新计算任务失败', error);
+  } finally {
+    isRecalculating.value = false;
+  }
+};
+
 onMounted(() => {
   if (taskId.value) {
     fetchTaskInfo();
@@ -221,29 +261,60 @@ onMounted(() => {
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="6">
-              <el-button
-                type="primary"
-                :icon="Search"
-                @click="handleSearch"
-                :loading="isLoading"
-              >
-                查询
-              </el-button>
-              <el-button :icon="Refresh" @click="handleReset">重置</el-button>
-              <el-button
-                v-if="canDownloadResultCases"
-                type="success"
-                :icon="Download"
-                :loading="isDownloadingCases"
-                @click="downloadResultCases"
-              >
-                下载任务病历
-              </el-button>
+            <el-col :span="18">
+              <div class="action-group">
+                <el-button
+                  type="primary"
+                  :icon="Search"
+                  @click="handleSearch"
+                  :loading="isLoading"
+                >
+                  查询
+                </el-button>
+                <el-button :icon="Refresh" @click="handleReset">重置</el-button>
+                <el-button
+                  v-if="canDownloadResultCases"
+                  class="secondary-action"
+                  :icon="Download"
+                  :loading="isDownloadingCases"
+                  @click="downloadResultCases"
+                >
+                  下载病历
+                </el-button>
+                <el-tooltip content="按当前任务配置重新读取病历并执行规则" placement="top">
+                  <el-button
+                    class="recalculate-action"
+                    :icon="RefreshRight"
+                    :loading="isRecalculating"
+                    :disabled="!taskId"
+                    @click="requestModelRecalculation"
+                  >
+                    重新计算
+                  </el-button>
+                </el-tooltip>
+              </div>
             </el-col>
           </el-row>
         </el-form>
       </div>
+
+      <el-collapse v-model="expandedPanels" class="reflection-panel">
+        <el-collapse-item name="reflection">
+          <template #title>
+            <div class="reflection-title">
+              <el-icon><DocumentChecked /></el-icon>
+              <span>模型计算自检</span>
+              <span class="reflection-caption">仅辅助核验，不改变违规判定</span>
+            </div>
+          </template>
+          <div v-if="taskReflection" class="reflection-content">
+            {{ taskReflection }}
+          </div>
+          <div v-else class="reflection-empty">
+            {{ taskStatus === 'completed' ? '该任务尚未生成模型自检结果。请点击“重新计算”后查看。' : '任务完成后将自动生成模型自检结果。' }}
+          </div>
+        </el-collapse-item>
+      </el-collapse>
 
       <div class="table-card">
         <el-table
@@ -355,7 +426,80 @@ onMounted(() => {
   color: #8a94a6;
 }
 .query-card {
-  padding-bottom: 10px;
+  padding-bottom: 14px;
+}
+.action-group {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-height: 32px;
+}
+.action-group :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.secondary-action {
+  border-color: #b7ebd0;
+  color: #1c9c5a;
+}
+.secondary-action:hover {
+  background: #effbf4;
+  border-color: #6bd49b;
+  color: #158448;
+}
+.recalculate-action {
+  background: #fffaf0;
+  border-color: #f3d39a;
+  color: #b97810;
+}
+.recalculate-action:hover {
+  background: #fff3dc;
+  border-color: #e8b75f;
+  color: #935b05;
+}
+.reflection-panel {
+  border-bottom: 0;
+  border-top: 0;
+  margin-bottom: 12px;
+}
+.reflection-panel :deep(.el-collapse-item__header) {
+  background: #f7faff;
+  border: 1px solid #e1ebfa;
+  border-radius: 8px;
+  color: #29476f;
+  font-size: 14px;
+  height: 42px;
+  padding: 0 14px;
+}
+.reflection-panel :deep(.el-collapse-item__wrap) {
+  border-bottom: 0;
+}
+.reflection-panel :deep(.el-collapse-item__content) {
+  padding-bottom: 0;
+}
+.reflection-title {
+  align-items: center;
+  display: flex;
+  font-weight: 600;
+  gap: 8px;
+}
+.reflection-caption {
+  color: #8492a6;
+  font-size: 12px;
+  font-weight: 400;
+}
+.reflection-content,
+.reflection-empty {
+  border: 1px solid #e7edf7;
+  border-radius: 0 0 8px 8px;
+  border-top: 0;
+  color: #43556e;
+  line-height: 1.8;
+  padding: 12px 16px;
+  white-space: pre-wrap;
+}
+.reflection-empty {
+  color: #8a94a6;
 }
 .table-card {
   border-top: 1px solid #eef2f7;

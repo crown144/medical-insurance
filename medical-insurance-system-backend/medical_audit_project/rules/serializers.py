@@ -51,7 +51,7 @@ class RuleSerializer(serializers.ModelSerializer):
 
             data['ruleId'] = f"R-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
         data.setdefault('logicExpression', '')
-        data.setdefault('enabled', True)
+        data.setdefault('enabled', False)
         return super().to_internal_value(data)
 
     def validate(self, attrs):

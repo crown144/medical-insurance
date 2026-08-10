@@ -42,6 +42,7 @@ def build_converter_config() -> Dict[str, Any]:
         },
         "收费": {
             "住院号": "INHOS_NO",
+            "费用明细编号":"FEE_DTL_NO",
             "收费项目名称": "CHRG_ITM_NM",
             "收费项目代码": "CHRG_ITM_CD",
             "收费日期": "CHRG_DT",
@@ -50,7 +51,6 @@ def build_converter_config() -> Dict[str, Any]:
             "项目单位": "ITM_UNT",
             "项目费用": "ITM_FEE",
             "费用类别": "FEE_CGY_NM",
-            "收费明细主键": "PRM_KEY",
             "ORDER_NO": "ORDER_NO",
             "ORDER_ITEM_CODE": "ORDER_ITEM_CODE",
         },
@@ -304,7 +304,7 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                   ON drug_dim.DRG_CD = fee.CHRG_ITM_CD
                  AND drug_dim.MDC_ORG_CD = fee.MDC_ORG_CD
                 WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}'
-                    AND fee.FEE_CGY_NM IN ('中成药', '中草药', '西药')
+                    AND fee.FEE_CGY_NM IN ('中成药', '中草药', '西药', '药费', '药品', '药品费', '西药费', '中药费')
                     AND fee.CHRG_RTRN_FLG = 1
                     AND fee.INVLD_FLG = 0
                 ORDER BY fee.CHRG_ITM_NM, fee.CHRG_DT;
@@ -381,6 +381,7 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
         "收费": f"""
                 SELECT
                     fee.INHOS_NO,
+                    fee.FEE_DTL_NO,
                     fee.CHRG_ITM_NM,
                     fee.CHRG_ITM_CD,
                     fee.CHRG_DT,
@@ -393,8 +394,7 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                     fee.CHRG_RTRN_FLG,
                     fee.MDC_ORG_CD
                 FROM ODS_FACT_INHOS_FEE_DTL fee
-                WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}'
-                ORDER BY fee.PRM_KEY;
+                WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "医保": f"""
                 SELECT DISTINCT INHOS_NO, MDCR_CGY_CD, MDCR_CGY_NM, INVLD_FLG, MDC_ORG_CD

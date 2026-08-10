@@ -507,6 +507,15 @@ onUnmounted(() => {
           <el-descriptions-item label="任务摘要">
             {{ currentTaskDetail.summary || '无' }}
           </el-descriptions-item>
+          <el-descriptions-item label="计算自检（模型）" :span="2">
+            <div v-if="currentTaskDetail.self_reflection" class="self-reflection">
+              {{ currentTaskDetail.self_reflection }}
+            </div>
+            <span v-else class="self-reflection-empty">
+              {{ currentTaskDetail.status === 'completed' ? '该任务暂无自检结果。' : '任务完成后将自动生成。' }}
+            </span>
+            <div class="self-reflection-tip">仅作计算过程辅助核验，不改变违规判定结果。</div>
+          </el-descriptions-item>
           <el-descriptions-item label="住院号列表" :span="2">
             <div class="id-list">
               <el-tag
@@ -815,6 +824,23 @@ onUnmounted(() => {
 }
 .id-tag {
   font-family: monospace;
+}
+.self-reflection {
+  white-space: pre-line;
+  line-height: 1.65;
+  padding: 8px 10px;
+  border: 1px solid #d9ecff;
+  background: #f4f9ff;
+  color: #334155;
+  border-radius: 4px;
+}
+.self-reflection-empty {
+  color: #98a2b3;
+}
+.self-reflection-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #98a2b3;
 }
 .time-timeline {
   margin-top: 24px;

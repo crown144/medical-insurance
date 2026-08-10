@@ -34,7 +34,7 @@ const RULE_TYPE_LABELS: Record<string, string> = {
   PRICE_LIMIT: '超标准收费',
   CONSUMABLE_RESTRICTION: '耗材超限定',
   OVER_EXAMINATION: '过度医疗',
-  OTHER: '其他',
+  OTHER: '其他类型',
 };
 
 const RULE_TYPE_OPTIONS = Object.entries(RULE_TYPE_LABELS).map(

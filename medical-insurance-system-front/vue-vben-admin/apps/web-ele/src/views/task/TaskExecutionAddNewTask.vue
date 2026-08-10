@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import type {
   InhosSearchParams,
   RuleItem,
@@ -62,6 +62,8 @@ const detectionSchemes = ref({
   overLimit: true,
   repeatCharging: false,
   overStandard: false,
+  otherType: false,
+  hangingBed: false,
 });
 const allRules = ref<RuleItem[]>([]);
 const isLoadingRules = ref(true);
@@ -112,6 +114,16 @@ const overStandardRules = ref<RuleItem[]>([]);
 const isLoadingOverStandardRules = ref(false);
 const overStandardRuleSearchQuery = ref('');
 const selectedOverStandardRuleIds = ref<number[]>([]);
+
+const otherRules = ref<RuleItem[]>([]);
+const isLoadingOtherRules = ref(false);
+const otherRuleSearchQuery = ref('');
+const selectedOtherRuleIds = ref<number[]>([]);
+
+const hangingBedRules = ref<RuleItem[]>([]);
+const isLoadingHangingBedRules = ref(false);
+const hangingBedRuleSearchQuery = ref('');
+const selectedHangingBedRuleIds = ref<number[]>([]);
 
 // --- 业务逻辑 ---
 
@@ -171,6 +183,60 @@ watch(
   { deep: true },
 );
 
+const loadOtherRules = async () => {
+  if (!detectionSchemes.value.otherType) {
+    otherRules.value = [];
+    return;
+  }
+  isLoadingOtherRules.value = true;
+  try {
+    const params = {
+      search: otherRuleSearchQuery.value.trim() || undefined,
+      // 兼容此前导入为“其他”的历史规则。
+      type__in: '其他类型,其他',
+      paginate: 'false',
+    };
+    const res = await getRuleListApi(params);
+    otherRules.value = processRules(res);
+  } catch (error) {
+    console.error('加载其他类型规则失败', error);
+  } finally {
+    isLoadingOtherRules.value = false;
+  }
+};
+
+watch(
+  [() => detectionSchemes.value.otherType, otherRuleSearchQuery],
+  loadOtherRules,
+  { deep: true },
+);
+
+const loadHangingBedRules = async () => {
+  if (!detectionSchemes.value.hangingBed) {
+    hangingBedRules.value = [];
+    return;
+  }
+  isLoadingHangingBedRules.value = true;
+  try {
+    const res = await getRuleListApi({
+      search: hangingBedRuleSearchQuery.value.trim() || undefined,
+      type__in: '挂床住院',
+      paginate: 'false',
+    });
+    hangingBedRules.value = processRules(res);
+  } catch (error) {
+    console.error('加载挂床住院规则失败', error);
+  } finally {
+    isLoadingHangingBedRules.value = false;
+  }
+};
+
+watch(
+  [() => detectionSchemes.value.hangingBed, hangingBedRuleSearchQuery],
+  loadHangingBedRules,
+  { deep: true },
+);
+
 // 选择事件处理
 const handleRepeatSelectionChange = (selectedRows: RuleItem[]) => {
   selectedRepeatRuleIds.value = selectedRows.map((row) => row.id);
@@ -178,6 +244,14 @@ const handleRepeatSelectionChange = (selectedRows: RuleItem[]) => {
 
 const handleOverStandardSelectionChange = (selectedRows: RuleItem[]) => {
   selectedOverStandardRuleIds.value = selectedRows.map((row) => row.id);
+};
+
+const handleOtherSelectionChange = (selectedRows: RuleItem[]) => {
+  selectedOtherRuleIds.value = selectedRows.map((row) => row.id);
+};
+
+const handleHangingBedSelectionChange = (selectedRows: RuleItem[]) => {
+  selectedHangingBedRuleIds.value = selectedRows.map((row) => row.id);
 };
 
 const loadAllRules = async () => {
@@ -310,6 +384,8 @@ const createTask = async () => {
   if (detectionSchemes.value.overLimit) selectedSchemas.push('超限定用药');
   if (detectionSchemes.value.repeatCharging) selectedSchemas.push('重复收费');
   if (detectionSchemes.value.overStandard) selectedSchemas.push('超标准收费');
+  if (detectionSchemes.value.otherType) selectedSchemas.push('其他类型');
+  if (detectionSchemes.value.hangingBed) selectedSchemas.push('挂床住院');
 
   if (selectedSchemas.length === 0)
     return ElMessage.warning('请至少选择一个检测方案');
@@ -325,6 +401,8 @@ const createTask = async () => {
       ...(detectionSchemes.value.overStandard
         ? selectedOverStandardRuleIds.value
         : []),
+      ...(detectionSchemes.value.otherType ? selectedOtherRuleIds.value : []),
+      ...(detectionSchemes.value.hangingBed ? selectedHangingBedRuleIds.value : []),
     ];
 
     const payload = {
@@ -566,6 +644,16 @@ const goBack = () => router.back();
               label="超标准收费"
               border
             />
+            <ElCheckbox
+              v-model="detectionSchemes.otherType"
+              label="其他类型"
+              border
+            />
+            <ElCheckbox
+              v-model="detectionSchemes.hangingBed"
+              label="挂床住院"
+              border
+            />
           </div>
         </div>
 
@@ -730,10 +818,120 @@ const goBack = () => router.back();
             </div>
           </div>
         </ElCollapseTransition>
+
+        <ElCollapseTransition>
+          <div
+            v-if="detectionSchemes.otherType"
+            class="mt-4 border-t border-dashed border-gray-200 pt-4"
+          >
+            <div class="rule-header">
+              <span class="sub-title"
+                >配置“其他类型”规则
+                <span class="ml-2 text-xs text-blue-500"
+                  >已选 {{ selectedOtherRuleIds.length }} 条</span
+                ></span
+              >
+              <ElInput
+                v-model="otherRuleSearchQuery"
+                placeholder="搜索规则名称..."
+                :prefix-icon="Search"
+                style="width: 250px"
+                size="small"
+              />
+            </div>
+
+            <div class="table-card mt-4">
+              <ElTable
+                :data="otherRules"
+                v-loading="isLoadingOtherRules"
+                height="350"
+                border
+                class="task-table"
+                @selection-change="handleOtherSelectionChange"
+                row-key="id"
+              >
+                <ElTableColumn
+                  type="selection"
+                  width="50"
+                  align="center"
+                  :reserve-selection="true"
+                />
+                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
+                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                  <template #default="{ row }">
+                    <span class="font-bold text-gray-700">{{
+                      row.drug_name
+                    }}</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="description"
+                  label="规则描述"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+            </div>
+          </div>
+        </ElCollapseTransition>
+
+        <ElCollapseTransition>
+          <div
+            v-if="detectionSchemes.hangingBed"
+            class="mt-4 border-t border-dashed border-gray-200 pt-4"
+          >
+            <div class="rule-header">
+              <span class="sub-title"
+                >配置“挂床住院”规则
+                <span class="ml-2 text-xs text-blue-500"
+                  >已选 {{ selectedHangingBedRuleIds.length }} 条</span
+                ></span
+              >
+              <ElInput
+                v-model="hangingBedRuleSearchQuery"
+                placeholder="搜索规则名称..."
+                :prefix-icon="Search"
+                style="width: 250px"
+                size="small"
+              />
+            </div>
+
+            <div class="table-card mt-4">
+              <ElTable
+                :data="hangingBedRules"
+                v-loading="isLoadingHangingBedRules"
+                height="350"
+                border
+                class="task-table"
+                @selection-change="handleHangingBedSelectionChange"
+                row-key="id"
+              >
+                <ElTableColumn
+                  type="selection"
+                  width="50"
+                  align="center"
+                  :reserve-selection="true"
+                />
+                <ElTableColumn prop="ruleId" label="规则ID" width="100" />
+                <ElTableColumn prop="drug_name" label="规则名称" width="180">
+                  <template #default="{ row }">
+                    <span class="font-bold text-gray-700">{{
+                      row.drug_name
+                    }}</span>
+                  </template>
+                </ElTableColumn>
+                <ElTableColumn
+                  prop="description"
+                  label="规则描述"
+                  show-overflow-tooltip
+                />
+              </ElTable>
+            </div>
+          </div>
+        </ElCollapseTransition>
       </div>
     </div>
   </div>
-</template>
+</template>)
 
 <style scoped>
 /* =========================================

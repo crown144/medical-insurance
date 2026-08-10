@@ -9,7 +9,6 @@ import requests
 from typing import Dict, List, Any, Optional, Union
 import re
 import glob
-
 try:
     from .medical_configs import build_converter_config, build_module_queries
 except ImportError:
@@ -1442,6 +1441,7 @@ class MedicalDataProcessor:
             "收费": f"""
                 SELECT
                     fee.INHOS_NO,
+                    fee.FEE_DTL_NO,
                     fee.CHRG_ITM_NM,
                     fee.CHRG_ITM_CD,
                     fee.CHRG_DT,
@@ -1455,8 +1455,7 @@ class MedicalDataProcessor:
                     fee.MDC_ORG_CD,
                     fee.INVLD_FLG
                 FROM ODS_FACT_INHOS_FEE_DTL fee
-                WHERE fee.INHOS_NO IN ({quoted}) {mdc_condition}
-                ORDER BY fee.PRM_KEY;
+                WHERE fee.INHOS_NO IN ({quoted}) {mdc_condition};
             """,
             "医保": f"""
                 SELECT DISTINCT INHOS_NO, MDCR_CGY_CD, MDCR_CGY_NM, INVLD_FLG
@@ -2112,7 +2111,7 @@ class MedicalDataProcessor:
             return result
 
     def _filter_medication_records_from_fee(self, fee_records):
-            drug_categories = {"中成药", "中草药", "西药"}
+            drug_categories = {"中成药", "中草药", "西药", "药费", "药品", "药品费", "西药费", "中药费"}
             medication_records = []
             for record in fee_records or []:
                 fee_category = str(record.get("FEE_CGY_NM") or "").strip()

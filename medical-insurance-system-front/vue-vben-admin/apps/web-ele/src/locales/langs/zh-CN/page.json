@@ -13,8 +13,8 @@
     "workspace": "工作台"
   },
   "sqlAnalysis": {
-    "title": "SQL分析",
-    "management": "SQL管理",
-    "execution": "SQL执行"
+    "title": "SQL类规则",
+    "management": "规则管理",
+    "execution": "任务执行"
   }
 }

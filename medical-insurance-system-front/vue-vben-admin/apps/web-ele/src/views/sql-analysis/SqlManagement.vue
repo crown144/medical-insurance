@@ -136,7 +136,7 @@ onMounted(fetchData);
     <div class="header">
       <div class="title">
         <span class="bar"></span>
-        <span>SQL管理</span>
+        <span>规则管理</span>
       </div>
       <div class="header-actions">
         <el-button :icon="Plus" type="primary" @click="openCreate">新增SQL规则</el-button>

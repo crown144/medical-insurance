@@ -171,7 +171,7 @@ onMounted(async () => {
       <div class="title-row">
         <div class="title">
           <span class="bar"></span>
-          <span>SQL执行</span>
+          <span>任务执行</span>
         </div>
       </div>
 

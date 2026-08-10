@@ -8,6 +8,13 @@ from typing import List, Dict, Any, Union
 import requests
 from pricings.models import StandardChargeItem
 from rules.models import Rule  # 导入 Rule 模型
+from engine.order_charge_evidence import (
+    OrderChargeEvidenceList,
+    filter_order_charge_evidence,
+    get_order_frequency_evidence,
+    is_order_event_field,
+    prepare_order_charge_evidence,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +89,21 @@ def get_val(source: Union[Dict, List, Any], path: str, default: Any = None) -> A
 
     return current
 
-def filter_list(data_list: List[Dict], field_path: str, match_value: Any, operator: str = "==") -> List[Dict]:
+def filter_list(
+    data_list: List[Dict],
+    field_path: str,
+    match_value: Any,
+    operator: str = "==",
+    include_charge_frequency: bool = False,
+) -> List[Dict]:
+    if (
+        include_charge_frequency
+        and isinstance(data_list, OrderChargeEvidenceList)
+        and is_order_event_field(field_path)
+    ):
+        # 医嘱、收费分别计数，取较大值；不把同一医疗行为的两份记录相加。
+        return filter_order_charge_evidence(data_list, field_path, match_value, operator)
+
     if not data_list or not isinstance(data_list, list):
         return []
 
@@ -204,39 +225,57 @@ def is_compare(value: float, operator: str, threshold: float) -> bool:
         return False
     return False
 
-def llm_bool(context_text: str, question: str) -> bool:
+# 与 data_adapter.sy 中的 qwen_legacy 配置一致；compose 使用 host 网络，
+# 因此此处访问的就是宿主机实际监听的模型端口。
+RULE_LLM_URL = "http://127.0.0.1:54320/v1/chat/completions"
+RULE_LLM_MODEL = "qwen3-30b-a3b"
 
+
+def _parse_llm_boolean(answer: str) -> bool:
+    """仅接受明确的肯定回答，避免把“不是”误判成“是”。"""
+    normalized = (answer or "").strip().lower()
+    first_line = normalized.splitlines()[0].strip(" \t\r\n。！!，,；;") if normalized else ""
+    if first_line in {"是", "yes", "true"}:
+        return True
+    if first_line in {"否", "不是", "no", "false"}:
+        return False
+    logger.warning("LLM回答不符合是/否约束，按否处理：%s", answer)
+    return False
+
+
+def llm_bool(context_text: str, question: str) -> bool:
+    """调用已部署的病历抽取模型，返回其明确的“是/否”判断。"""
     if not context_text or len(context_text) < 2:
         return False
 
-    prompt = f"请根据以下病历信息回答问题，只回答'是'或'否'：\n\n病历信息：{context_text}\n\n问题：{question}\n\n回答："
-    
-    logger.info(f"--- [LLM CALL] ---\nContext: {context_text[:50]}...\nQ: {question}")
-    
-    try:
-        url = "http://localhost:9033/v1/chat/completions"
-        payload = {
-            "model": "Qwen3-8b",
-            "messages": [
-                {"role": "user", "content": prompt}
-            ],
-            "temperature": 0.1,
-            "max_tokens": 10
-        }
-        
+    prompt = (
+        "请根据以下病历信息回答问题。只能输出一个字：是 或 否；"
+        "不得输出分析、解释或其他文字。\n\n"
+        f"病历信息：{context_text}\n\n问题：{question}\n\n回答："
+    )
+    logger.info("--- [LLM CALL] ---\nEndpoint: %s\nContext: %s...\nQ: %s", RULE_LLM_URL, context_text[:200], question)
 
-        response = requests.post(url, json=payload, timeout=10)
+    try:
+        payload = {
+            "model": RULE_LLM_MODEL,
+            "messages": [
+                {"role": "system", "content": "你是医学规则判定器。禁止输出思考过程、分析或解释；只能输出一个字：是或否。"},
+                {"role": "user", "content": prompt},
+            ],
+            # Qwen3 默认可能先输出推理过程；vLLM 的此参数会关闭思考模式，
+            # 以便模型在有限输出内直接给出可机器判读的“是/否”。
+            "chat_template_kwargs": {"enable_thinking": False},
+            "temperature": 0.1,
+            "max_tokens": 8,
+        }
+        response = requests.post(RULE_LLM_URL, json=payload, timeout=15)
         response.raise_for_status()
-        
         result = response.json()
         answer = result.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-        
-        logger.info(f"--- [LLM RESPONSE] ---\nAnswer: {answer}")
-        
-        return "是" in answer or "yes" in answer.lower() or "true" in answer.lower()
-        
-    except Exception as e:
-        logger.error(f"LLM调用错误: {e}")
+        logger.info("--- [LLM RESPONSE] ---\nEndpoint: %s\nAnswer: %s", RULE_LLM_URL, answer)
+        return _parse_llm_boolean(answer)
+    except Exception as exc:
+        logger.error("LLM调用错误: %s", exc)
         return False
 
 # ==========================================
@@ -454,9 +493,83 @@ def preprocess_patient_data(patient_json: dict):
         
         if mapped_count > 0:
             logger.info(f"[Preprocess] Mapped '药物名称' to '药品通用名' for {mapped_count} items.")
+
+        # 医嘱频次规则需要同时参考收费明细。两侧后续在 filter_list 中分别
+        # 去重计数并取较大值，避免医嘱和收费的同一行为被重复相加。
+        order_charge_stats = prepare_order_charge_evidence(patient_json)
+        if order_charge_stats["charge_event_count"]:
+            logger.info(
+                "[Preprocess] Prepared order/charge frequency evidence: orders=%s, charge_events=%s.",
+                order_charge_stats["order_count"],
+                order_charge_stats["charge_event_count"],
+            )
             
     except Exception as e:
         logger.error(f"[Preprocess] Error during data preprocessing: {e}", exc_info=True)
+
+
+def _is_order_frequency_rule(rule: Rule) -> bool:
+    """判断规则是否允许用收费次数补充医嘱频次。
+
+    收费时间不是开嘱时间，因此“同时开具”只能依据真实医嘱时间，绝不以收费
+    时间推断；同一次住院/同日/短期重复/次数上限等频次规则才允许收费补证。
+    """
+    rule_text = " ".join(
+        str(value or "")
+        for value in (getattr(rule, "drug_name", ""), getattr(rule, "description", ""), getattr(rule, "rule_code", ""))
+    )
+    has_order_context = "医嘱" in rule_text or "开立" in rule_text
+    if not has_order_context:
+        return False
+    if any(token in rule_text for token in ("同时开具", "同时开立", "同时下达")):
+        return False
+    frequency_tokens = ("不超过", "超过", "次数", "频次", "重复", "同一次住院", "同一日", "短期")
+    return any(token in rule_text for token in frequency_tokens)
+
+
+def _make_rule_filter_list(include_charge_frequency: bool):
+    """为当前规则绑定收费频次开关，避免同一执行批次规则相互污染。"""
+    def _rule_filter_list(data_list, field_path, match_value, operator="=="):
+        return filter_list(
+            data_list,
+            field_path,
+            match_value,
+            operator,
+            include_charge_frequency=include_charge_frequency,
+        )
+    return _rule_filter_list
+
+
+def _upgrade_legacy_short_order_rule_code(rule_code: str) -> str:
+    """让已入库的旧版“短期内重复开具医嘱”规则也使用双源次数证据。
+
+    旧模板在定义 ``target_aliases`` 后直接遍历 ``get_val(ctx, "医嘱")``。
+    这里仅替换该固定模板的取数行，先按别名比较医嘱/收费两侧次数，取较大
+    的事件列表；其他规则代码保持原样。
+    """
+    if not isinstance(rule_code, str) or "target_aliases" not in rule_code or "short_period_days" not in rule_code:
+        return rule_code
+
+    pattern = r'(?m)^(\s*)orders\s*=\s*get_val\(ctx,\s*["\']医嘱["\'],\s*default\s*=\s*\[\]\s*\)\s*$'
+    replacement = (
+        r'\1frequency_evidence = get_order_frequency_evidence(ctx, target_aliases, "contains")\n'
+        r'\1orders = frequency_evidence["effective_items"]'
+    )
+    upgraded, count = re.subn(pattern, replacement, rule_code, count=1)
+    if count:
+        # 同时把双来源统计写入旧规则的两个返回证据字典，使历史已入库规则
+        # 无需重新保存也能展示医嘱/收费的分别计数。
+        evidence_pattern = r'(?m)^(\s*)"short_period_days": short_period_days,'
+        evidence_replacement = (
+            r'\1"short_period_days": short_period_days,\n'
+            r'\1"医嘱匹配数": frequency_evidence["order_count"],\n'
+            r'\1"收费匹配数": frequency_evidence["charge_count"],\n'
+            r'\1"有效次数": frequency_evidence["effective_count"],\n'
+            r'\1"次数核验来源": frequency_evidence["evidence_source"],'
+        )
+        upgraded = re.sub(evidence_pattern, evidence_replacement, upgraded)
+        logger.info("[RuleEngineV2] Applied order/charge frequency compatibility to legacy short-period rule.")
+    return upgraded
 
 
 def check_indication_rule(patient_json: dict, target_rules=None) -> list:
@@ -500,6 +613,7 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
         'list_contains': list_contains,
         'is_compare': is_compare, # Added for Price Check logic
         'llm_bool': llm_bool,
+        'get_order_frequency_evidence': get_order_frequency_evidence,
         'submit_result': submit_result,
         'json': json,
         're': re,
@@ -520,11 +634,16 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
             exec_globals['match_value'] = rule.drug_name
             exec_globals['drug_name'] = rule.drug_name
             exec_globals['rule_id'] = rule.rule_id
+            use_charge_frequency = _is_order_frequency_rule(rule)
+            exec_globals['filter_list'] = _make_rule_filter_list(use_charge_frequency)
+            if use_charge_frequency:
+                logger.info("[RuleEngineV2] Charge evidence enabled for order-frequency rule %s.", rule.rule_id)
 
             exec_locals = {}
             
 
-            exec(rule.rule_code, exec_globals, exec_locals)
+            runtime_rule_code = _upgrade_legacy_short_order_rule_code(rule.rule_code)
+            exec(runtime_rule_code, exec_globals, exec_locals)
             
             execute_func = exec_locals.get('execute_rule')
             

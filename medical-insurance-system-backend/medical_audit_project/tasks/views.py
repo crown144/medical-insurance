@@ -64,6 +64,7 @@ class TaskViewSet(viewsets.ModelViewSet):
             # 更新任务状态为 'pending' (待处理)，表示已接收
             task.status = 'pending'
             task.summary = '任务已加入队列，等待执行...'
+            task.self_reflection = ''
             task.save()
 
             return Response({'status': '任务已成功加入执行队列'}, status=status.HTTP_202_ACCEPTED)
