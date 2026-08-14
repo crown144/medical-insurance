@@ -117,6 +117,33 @@ SOURCE_MDC_ORG_NAME = os.environ.get('SOURCE_MDC_ORG_NAME', '')
 MEDICAL_AUDIT_SYSTEM_CODE = os.environ.get('MEDICAL_AUDIT_SYSTEM_CODE', 'YIBAO')
 MEDICAL_AUDIT_EVIDENCE_VERSION = os.environ.get('MEDICAL_AUDIT_EVIDENCE_VERSION', 'v20260710')
 MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE', str(60 * 60 * 12)))
+SSO_APP_ID = os.environ.get('SSO_APP_ID', '6E7aymY5E33X-qGK7NL6qKtn_oYNDZb0CVS7uHLx')
+SSO_APP_BASE_URL = os.environ.get('SSO_APP_BASE_URL', 'http://10.130.76.47:8080')
+SSO_LOGIN_CALLBACK_URL = os.environ.get('SSO_LOGIN_CALLBACK_URL', 'http://10.130.76.47:8080/api/sso/login')
+SSO_LOGOUT_CALLBACK_URL = os.environ.get('SSO_LOGOUT_CALLBACK_URL', 'http://10.130.76.47:8080/api/sso/logout')
+SSO_FRONTEND_LOGIN_PATH = os.environ.get('SSO_FRONTEND_LOGIN_PATH', '/#/auth/sso')
+SSO_FRONTEND_LOGOUT_PATH = os.environ.get('SSO_FRONTEND_LOGOUT_PATH', '/#/auth/sso-logout')
+SSO_SERVICE_VALIDATE_URL = os.environ.get(
+    'SSO_SERVICE_VALIDATE_URL',
+    'https://nova.hnzhjkd.yiducloud.cn/api/security-manage-permission/app/cas/serviceValidate',
+)
+SSO_CAS_LOGOUT_URL = os.environ.get(
+    'SSO_CAS_LOGOUT_URL',
+    'https://nova.hnzhjkd.yiducloud.cn/ucenter/uinfo/cas/js/logout',
+)
+SSO_PORTAL_HOME_URL = os.environ.get(
+    'SSO_PORTAL_HOME_URL',
+    'http://nova.hnzhjkd.yiducloud.cn/home/%E6%97%A0#/home-page',
+)
+SSO_ALLOWED_CALLBACK_HOSTS = tuple(
+    host.strip()
+    for host in os.environ.get('SSO_ALLOWED_CALLBACK_HOSTS', '10.130.76.47').split(',')
+    if host.strip()
+)
+SSO_HANDOFF_COOKIE_NAME = os.environ.get('SSO_HANDOFF_COOKIE_NAME', 'medical_audit_sso_handoff')
+SSO_HANDOFF_TOKEN_MAX_AGE = int(os.environ.get('SSO_HANDOFF_TOKEN_MAX_AGE', '60'))
+SSO_HTTP_TIMEOUT_SECONDS = int(os.environ.get('SSO_HTTP_TIMEOUT_SECONDS', '10'))
+SSO_COOKIE_SECURE = os.environ.get('SSO_COOKIE_SECURE', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
 INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
 INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))

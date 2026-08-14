@@ -85,7 +85,7 @@ const displayUserName = computed(
 );
 
 async function handleLogout() {
-  await authStore.logout(false);
+  authStore.logoutWithSso();
 }
 
 function handleNoticeClear() {

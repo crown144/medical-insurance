@@ -13,6 +13,12 @@ import { defineStore } from 'pinia';
 import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
 import { $t } from '#/locales';
 
+const SSO_CAS_LOGOUT_URL =
+  'https://nova.hnzhjkd.yiducloud.cn/ucenter/uinfo/cas/js/logout';
+const SSO_SERVICE_URL = 'http://10.130.76.47:8080/api/sso/login';
+const SSO_PORTAL_HOME_URL =
+  'http://nova.hnzhjkd.yiducloud.cn/home/%E6%97%A0#/home-page';
+
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
   const userStore = useUserStore();
@@ -106,6 +112,13 @@ export const useAuthStore = defineStore('auth', () => {
     });
   }
 
+  function logoutWithSso() {
+    const logoutUrl = new URL(SSO_CAS_LOGOUT_URL);
+    logoutUrl.searchParams.set('service', SSO_SERVICE_URL);
+    logoutUrl.searchParams.set('callback', SSO_PORTAL_HOME_URL);
+    window.location.replace(logoutUrl.toString());
+  }
+
   async function fetchUserInfo() {
     let userInfo: null | UserInfo = null;
     userInfo = await getUserInfoApi();
@@ -123,5 +136,6 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUserInfo,
     loginLoading,
     logout,
+    logoutWithSso,
   };
 });

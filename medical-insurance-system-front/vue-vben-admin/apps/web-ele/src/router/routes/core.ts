@@ -57,6 +57,22 @@ const coreRoutes: RouteRecordRaw[] = [
         },
       },
       {
+        name: 'SsoLogin',
+        path: 'sso',
+        component: () => import('#/views/_core/authentication/sso-login.vue'),
+        meta: {
+          title: 'SSO Login',
+        },
+      },
+      {
+        name: 'SsoLogout',
+        path: 'sso-logout',
+        component: () => import('#/views/_core/authentication/sso-logout.vue'),
+        meta: {
+          title: 'SSO Logout',
+        },
+      },
+      {
         name: 'CodeLogin',
         path: 'code-login',
         component: () => import('#/views/_core/authentication/code-login.vue'),

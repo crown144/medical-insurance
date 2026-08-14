@@ -25,6 +25,12 @@ export async function loginApi(data: AuthApi.LoginParams) {
   return baseRequestClient.post<any>('/auth/login', data);
 }
 
+export async function exchangeSsoTokenApi() {
+  return baseRequestClient.get<any>('/sso/exchange', {
+    withCredentials: true,
+  });
+}
+
 export async function refreshTokenApi() {
   return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
     withCredentials: true,
