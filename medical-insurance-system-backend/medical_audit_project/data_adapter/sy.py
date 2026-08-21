@@ -607,13 +607,13 @@ class MultiModelAPI:
         self.verbose = os.environ.get("VERBOSE", "").strip().lower() in {"1", "true", "yes", "y"}
         self.model_pools = {
             "qwen_pool": [
-                {"name": "qwen", "url": "http://127.0.0.1:9233/v1/chat/completions"},
-                {"name": "qwen", "url": "http://127.0.0.1:9234/v1/chat/completions"},
-                {"name": "qwen", "url": "http://127.0.0.1:9235/v1/chat/completions"},
-                {"name": "qwen", "url": "http://127.0.0.1:9236/v1/chat/completions"},
+                {"name": "qwen", "url": "http://10.114.255.27:9233/v1/chat/completions"},
+                {"name": "qwen", "url": "http://10.114.255.27:9234/v1/chat/completions"},
+                {"name": "qwen", "url": "http://10.114.255.27:9235/v1/chat/completions"},
+                {"name": "qwen", "url": "http://10.114.255.27:9236/v1/chat/completions"},
             ],
-            "qwen_legacy": [{"name": "qwen3-30b-a3b", "url": "http://localhost:54320/v1/chat/completions"}],
-            "qwen2.5-7B": [{"name": "qwen2.5-7B", "url": "http://localhost:54322/v1/chat/completions"}],
+            "qwen_legacy": [{"name": "qwen3-30b-a3b", "url": "http://10.114.255.26:54320/v1/chat/completions"}],
+            "qwen2.5-7B": [{"name": "qwen2.5-7B", "url": "http://10.114.255.27:9235/v1/chat/completions"}],
         }
         self.pool_counters = {pool_name: 0 for pool_name in self.model_pools}
         self.max_workers = sum(len(pool) for pool in self.model_pools.values())

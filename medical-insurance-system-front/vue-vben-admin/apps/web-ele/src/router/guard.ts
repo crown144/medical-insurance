@@ -61,7 +61,6 @@ function setupAccessGuard(router: Router) {
       }
       return true;
     }
-
     // accessToken 检查
     if (!accessStore.accessToken) {
       // 明确声明忽略权限访问权限，则可以访问

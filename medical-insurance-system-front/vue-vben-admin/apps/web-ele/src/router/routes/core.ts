@@ -62,6 +62,7 @@ const coreRoutes: RouteRecordRaw[] = [
         component: () => import('#/views/_core/authentication/sso-login.vue'),
         meta: {
           title: 'SSO Login',
+          ignoreAccess: true,
         },
       },
       {
@@ -70,6 +71,7 @@ const coreRoutes: RouteRecordRaw[] = [
         component: () => import('#/views/_core/authentication/sso-logout.vue'),
         meta: {
           title: 'SSO Logout',
+          ignoreAccess: true,
         },
       },
       {

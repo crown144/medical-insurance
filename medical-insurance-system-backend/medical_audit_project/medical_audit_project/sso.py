@@ -10,6 +10,7 @@ from urllib.request import Request, urlopen
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core import signing
+from django.db import transaction
 
 from accounts.models import AccountProfile
 
@@ -126,8 +127,17 @@ def call_service_validate(ticket: str, appid: str) -> PortalUser:
         fullname=str(data.get('fullname') or '').strip(),
         raw=data,
     )
-
-
+# def call_service_validate(ticket: str, appid: str) -> PortalUser:
+#     return PortalUser(
+#         username='test_user',
+#         fullname='测试用户',
+#         raw={
+#             'id': 'test-id',
+#             'username': 'test_user',
+#             'fullname': '测试用户',
+#             'status': 1,
+#         },
+#     )
 def resolve_local_profile(username: str) -> AccountProfile:
     user_model = get_user_model()
     try:

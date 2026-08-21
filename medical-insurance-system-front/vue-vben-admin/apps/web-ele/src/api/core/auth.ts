@@ -25,9 +25,13 @@ export async function loginApi(data: AuthApi.LoginParams) {
   return baseRequestClient.post<any>('/auth/login', data);
 }
 
-export async function exchangeSsoTokenApi() {
-  return baseRequestClient.get<any>('/sso/exchange', {
-    withCredentials: true,
+export async function loginSsoApi(params: {
+  appid: string;
+  callback: string;
+  ticket: string;
+}) {
+  return baseRequestClient.get<any>('/sso/login', {
+    params,
   });
 }
 

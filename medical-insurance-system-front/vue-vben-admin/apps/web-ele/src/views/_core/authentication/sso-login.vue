@@ -1,15 +1,16 @@
 <script lang="ts" setup>
 import { onMounted } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 
 import { preferences } from '@vben/preferences';
 import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 
 import { ElMessage } from 'element-plus';
 
-import { exchangeSsoTokenApi, getAccessCodesApi, getUserInfoApi } from '#/api';
+import { getAccessCodesApi, getUserInfoApi, loginSsoApi } from '#/api';
 
 const router = useRouter();
+const route = useRoute();
 const accessStore = useAccessStore();
 const userStore = useUserStore();
 
@@ -23,18 +24,25 @@ function clearCurrentUrl() {
 }
 
 async function bootstrapSsoLogin() {
-  clearCurrentUrl();
+  const ticket = String(route.query.ticket || '').trim();
+  const appid = String(route.query.appid || '').trim();
+  const callback = String(route.query.callback || '').trim();
 
   try {
-    const response = await exchangeSsoTokenApi();
-    const result = response?.data?.result ?? {};
-    const accessToken = result.accessToken || result.token;
-    const callback = result.callback;
+    if (!ticket || !appid || !callback) {
+      throw new Error('Missing SSO params.');
+    }
 
-    if (!accessToken || !callback) {
+    const response = await loginSsoApi({ ticket, appid, callback });
+    const result = response?.data?.result ?? response?.result ?? {};
+    const accessToken = result.accessToken || result.token;
+    const targetCallback = result.callback || callback;
+
+    if (!accessToken || !targetCallback) {
       throw new Error('SSO login response is incomplete.');
     }
 
+    clearCurrentUrl();
     resetAllStores();
     accessStore.setAccessToken(accessToken);
 
@@ -48,13 +56,11 @@ async function bootstrapSsoLogin() {
     accessStore.setLoginExpired(false);
 
     window.location.replace(
-      callback || userInfo?.homePath || preferences.app.defaultHomePath,
+      targetCallback || userInfo?.homePath || preferences.app.defaultHomePath,
     );
   } catch {
     accessStore.setAccessToken(null);
-    ElMessage.error(
-      'SSO login failed. Please confirm this account is enabled.',
-    );
+    ElMessage.error('SSO login failed. Please confirm this account is enabled.');
     await router.replace('/auth/login');
   }
 }
