@@ -125,15 +125,15 @@ SSO_FRONTEND_LOGIN_PATH = os.environ.get('SSO_FRONTEND_LOGIN_PATH', '/#/auth/sso
 SSO_FRONTEND_LOGOUT_PATH = os.environ.get('SSO_FRONTEND_LOGOUT_PATH', '/#/auth/sso-logout')
 SSO_SERVICE_VALIDATE_URL = os.environ.get(
     'SSO_SERVICE_VALIDATE_URL',
-    'https://10.130.76.47.cn/api/security-manage-permission/app/cas/serviceValidate',
+    'https://10.130.76.47/api/security-manage-permission/app/cas/serviceValidate',
 )
 SSO_CAS_LOGOUT_URL = os.environ.get(
     'SSO_CAS_LOGOUT_URL',
-    'https://10.130.76.47.cn/ucenter/uinfo/cas/js/logout',
+    'https://10.130.76.47/ucenter/uinfo/cas/js/logout',
 )
 SSO_PORTAL_HOME_URL = os.environ.get(
     'SSO_PORTAL_HOME_URL',
-    'http://10.130.76.47.cn/home/%E6%97%A0#/home-page',
+    'http://10.130.76.47/home/%E6%97%A0#/home-page',
 )
 SSO_ALLOWED_CALLBACK_HOSTS = tuple(
     host.strip()
