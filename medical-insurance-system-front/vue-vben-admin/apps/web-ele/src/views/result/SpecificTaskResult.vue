@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import {
@@ -33,13 +33,17 @@ const taskName = ref(String(route.query.taskName || ''));
 const isLoading = ref(false);
 const isDownloadingCases = ref(false);
 const isRecalculating = ref(false);
+const isAutoRefreshing = ref(false);
 const taskStatus = ref('');
 const taskReflection = ref('');
+const interactionNote = ref('');
+const lastSyncedAt = ref('');
 const expandedPanels = ref(['reflection']);
 const tableData = ref<any[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(10);
+let refreshTimer: ReturnType<typeof window.setInterval> | null = null;
 
 const filterForm = reactive({
   hosId: '',
@@ -55,6 +59,7 @@ const fetchTaskInfo = async () => {
     taskName.value = res.data.name;
     taskStatus.value = res.data.status || '';
     taskReflection.value = res.data.self_reflection || '';
+    lastSyncedAt.value = new Date().toLocaleString();
   } catch (error) {
     console.error(error);
   }
@@ -139,6 +144,27 @@ const fetchTableData = async () => {
   } finally {
     isLoading.value = false;
   }
+};
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) {
+    clearInterval(refreshTimer);
+    refreshTimer = null;
+  }
+  isAutoRefreshing.value = false;
+};
+
+const syncTaskState = async () => {
+  await Promise.all([fetchTaskInfo(), fetchTableData()]);
+  if (taskStatus.value !== 'running' && taskStatus.value !== 'pending') {
+    stopAutoRefresh();
+  }
+};
+
+const startAutoRefresh = () => {
+  if (refreshTimer) return;
+  isAutoRefreshing.value = true;
+  refreshTimer = window.setInterval(syncTaskState, 3000);
 };
 
 const handleSearch = () => {
@@ -227,7 +253,12 @@ onMounted(() => {
   if (taskId.value) {
     fetchTaskInfo();
     fetchTableData();
+    startAutoRefresh();
   }
+});
+
+onUnmounted(() => {
+  stopAutoRefresh();
 });
 </script>
 
@@ -296,6 +327,45 @@ onMounted(() => {
             </el-col>
           </el-row>
         </el-form>
+      </div>
+
+      <div class="interaction-card">
+        <div class="interaction-header">
+          <div>
+            <div class="interaction-title">模型互动区</div>
+            <div class="interaction-sub">
+              支持当前任务重新计算与结果自动刷新
+              <span v-if="lastSyncedAt">，最近同步：{{ lastSyncedAt }}</span>
+            </div>
+          </div>
+          <el-tag :type="taskStatus === 'completed' ? 'success' : 'warning'" effect="plain">
+            {{ taskStatus || '未同步' }}
+          </el-tag>
+        </div>
+        <el-input
+          v-model="interactionNote"
+          type="textarea"
+          :rows="2"
+          placeholder="可输入本次重算说明"
+        />
+        <div class="interaction-actions">
+          <el-button
+            class="secondary-action"
+            :loading="isLoading"
+            @click="syncTaskState"
+          >
+            刷新结果
+          </el-button>
+          <el-button
+            class="recalculate-action"
+            :loading="isRecalculating"
+            :disabled="!taskId"
+            @click="requestModelRecalculation"
+          >
+            重新计算当前指标
+          </el-button>
+          <span v-if="isAutoRefreshing" class="interaction-hint">自动刷新中</span>
+        </div>
       </div>
 
       <el-collapse v-model="expandedPanels" class="reflection-panel">
@@ -427,6 +497,40 @@ onMounted(() => {
 }
 .query-card {
   padding-bottom: 14px;
+}
+.interaction-card {
+  background: #f7f9ff;
+  border: 1px solid #e4e9ff;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+}
+.interaction-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.interaction-title {
+  color: #1f2d3d;
+  font-size: 15px;
+  font-weight: 600;
+}
+.interaction-sub {
+  color: #6b7280;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.interaction-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.interaction-hint {
+  color: #409eff;
+  font-size: 12px;
 }
 .action-group {
   align-items: center;
