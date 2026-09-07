@@ -30,7 +30,7 @@ class RuleFilter(django_filters.FilterSet):
 
 
 class RuleViewSet(viewsets.ModelViewSet):
-    queryset = Rule.objects.all().order_by('id')
+    queryset = Rule.objects.filter(is_deleted=False).order_by('id')
     serializer_class = RuleSerializer
     pagination_class = OptionalPagination
     filter_backends = [
@@ -41,6 +41,13 @@ class RuleViewSet(viewsets.ModelViewSet):
     filterset_class = RuleFilter
     search_fields = ['drug_name', 'rule_id', 'description']
     ordering_fields = ['id', 'drug_name', 'created_at']
+
+    def perform_destroy(self, instance):
+        # 审核结果通过 PROTECT 外键引用规则。规则库中的“删除”应隐藏并
+        # 停用规则，同时保留历史审核结果所依赖的规则快照。
+        instance.status = False
+        instance.is_deleted = True
+        instance.save(update_fields=['status', 'is_deleted', 'updated_at'])
 
     @action(detail=False, methods=['post'], url_path='agenta/generate')
     def agenta_generate(self, request):

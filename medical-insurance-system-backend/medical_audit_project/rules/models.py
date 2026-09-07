@@ -23,6 +23,7 @@ class Rule(models.Model):
     logic_expression = models.TextField("逻辑表达式", blank=True, help_text="旧版逻辑表达式（已弃用，保留用于兼容）")
     rule_code = models.TextField("规则代码", blank=True, help_text="Python函数代码字符串，定义 execute_rule(medical_record, current_item) 函数")
     status = models.BooleanField("是否启用", default=True) # 之前叫 status，现在明确为布尔值
+    is_deleted = models.BooleanField("是否已删除", default=False, db_index=True)
      
     type = models.CharField("规则类型", max_length=50, db_index=True, blank=True, default="超限定用药") # 加上这个字段
     # 匹配字段：用于根据收费项目匹配规则
