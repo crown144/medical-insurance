@@ -7,6 +7,7 @@ class Result(models.Model):
     """审核结果表（记录违规项）"""
     task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='results', verbose_name="所属任务")
     rule = models.ForeignKey(Rule, on_delete=models.PROTECT, verbose_name="命中规则")
+    rule_version = models.PositiveIntegerField("命中规则版本", default=1, db_index=True)
     hospitalization_id = models.CharField("住院流水号", max_length=100, db_index=True)
     violation_item = models.TextField("违规项目快照", help_text="例如，违规药品的JSON快照", null=True, blank=True)
     reason = models.TextField("违规原因", null=True, blank=True)
