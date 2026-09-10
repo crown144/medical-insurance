@@ -12,6 +12,8 @@ from urllib.parse import quote
 from django.conf import settings
 import ast
 import json
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 from accounts.auth import get_request_profile
 from cases.models import Case
@@ -335,6 +337,36 @@ class ResultViewSet(viewsets.ReadOnlyModelViewSet): # 只读，不允许通过AP
         # 4. 重新构建最终的 QuerySet
         final_queryset = queryset.filter(pk__in=pks_to_keep)
         return final_queryset
+
+    @action(detail=False, methods=['post'], url_path='push-clues')
+    def push_clues(self, request):
+        if not _is_developer_request(request):
+            return Response({'detail': '仅开发用户可推送线索。'}, status=status.HTTP_403_FORBIDDEN)
+        base = str(getattr(settings, 'CLUE_PUSH_BASE_URL', '') or '').rstrip('/')
+        key = str(getattr(settings, 'CLUE_PUSH_API_KEY', '') or '')
+        data = request.data.get('data') if isinstance(request.data, dict) else None
+        if not base or not key:
+            return Response({'ok': False, 'steps': [{'name': '配置检查', 'ok': False, 'message': '未配置推送地址或授权 key'}]}, status=503)
+        if not isinstance(data, list) or not data or len(data) > 1000:
+            return Response({'ok': False, 'steps': [{'name': '请求校验', 'ok': False, 'message': 'data 必须为1-1000条数组'}]}, status=400)
+        steps=[]
+        try:
+            with urlopen(Request(f'{base}/zt/api/auth/token?{urlencode({"key": key})}'), timeout=15) as resp:
+                raw=resp.read().decode(); payload=json.loads(raw) if raw.lstrip().startswith('{') else raw.strip()
+            token=payload.get('token') if isinstance(payload,dict) else payload
+            if isinstance(payload,dict) and not token and isinstance(payload.get('data'),dict): token=payload['data'].get('token')
+            if not token: raise ValueError('Token 响应中没有 token')
+            steps.append({'name':'获取Token','ok':True,'message':'获取成功（Token 未返回前端）'})
+            steps.append({'name':'组装请求','ok':True,'message':f'已组装 {len(data)} 条线索'})
+            body=json.dumps({'data':data},ensure_ascii=False).encode()
+            req=Request(f'{base}/zt/api/dataservice/v1/receiveClue?{urlencode({"token":token})}',data=body,method='POST',headers={'Content-Type':'application/json; charset=utf-8','Accept':'application/json'})
+            with urlopen(req,timeout=30) as resp: result=json.loads(resp.read().decode())
+            ok=bool(result.get('result')) if isinstance(result,dict) else False
+            steps.append({'name':'推送线索','ok':ok,'message':result.get('message','平台已返回') if isinstance(result,dict) else '返回格式异常'})
+            return Response({'ok':ok,'steps':steps,'result':result})
+        except Exception as exc:
+            steps.append({'name':'推送线索','ok':False,'message':f'{type(exc).__name__}: {exc}'})
+            return Response({'ok':False,'steps':steps},status=502)
 
     @action(detail=False, methods=['get'], url_path='clues')
     def clues(self, request):

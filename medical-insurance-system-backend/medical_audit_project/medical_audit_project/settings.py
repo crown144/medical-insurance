@@ -272,3 +272,6 @@ RULE_COMPILE_LLM_MAX_TOKENS = int(
 RULE_COMPILE_LLM_TIMEOUT = int(
     _os.environ.get('RULE_COMPILE_LLM_TIMEOUT', '120'),
 )
+
+CLUE_PUSH_BASE_URL = os.environ.get('CLUE_PUSH_BASE_URL', '')
+CLUE_PUSH_API_KEY = os.environ.get('CLUE_PUSH_API_KEY', '')
