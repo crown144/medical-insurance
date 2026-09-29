@@ -10,6 +10,7 @@ urlpatterns = [
     path('api/auth/logout', views.auth_logout, name='auth_logout'),
     path('api/menu/all', views.menu_all, name='menu_all'),
     path('api/auth/codes', views.auth_codes, name='auth_codes'),
+    path('api/portal/', include('portal_integration.urls')),
     path('api/audit/', views.audit_detect, name='audit_detect'),
     path('api/', include('rules.urls')),
     path('api/', include('tasks.urls')),

@@ -37,6 +37,7 @@ INSTALLED_APPS = [
     'tasks',
     'results',
     'accounts',
+    'portal_integration',
     'cases',
     'sql_analysis',
     'repeat_charging',
@@ -117,6 +118,17 @@ SOURCE_MDC_ORG_NAME = os.environ.get('SOURCE_MDC_ORG_NAME', '')
 MEDICAL_AUDIT_SYSTEM_CODE = os.environ.get('MEDICAL_AUDIT_SYSTEM_CODE', 'YIBAO')
 MEDICAL_AUDIT_EVIDENCE_VERSION = os.environ.get('MEDICAL_AUDIT_EVIDENCE_VERSION', 'v20260710')
 MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE', str(60 * 60 * 12)))
+PORTAL_BASE_URL = os.environ.get('PORTAL_BASE_URL', '').rstrip('/')
+PORTAL_APP_ID = os.environ.get('PORTAL_APP_ID', '')
+PORTAL_ENCRYPT_ENABLED = os.environ.get('PORTAL_ENCRYPT_ENABLED', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_PUBLIC_KEY = os.environ.get('PORTAL_PUBLIC_KEY', '')
+PORTAL_APP_PUBLIC_KEY = os.environ.get('PORTAL_APP_PUBLIC_KEY', '')
+PORTAL_APP_PRIVATE_KEY = os.environ.get('PORTAL_APP_PRIVATE_KEY', '')
+PORTAL_USER_DETAIL_PATH = os.environ.get(
+    'PORTAL_USER_DETAIL_PATH',
+    '/api/security-manage-permission/app/user/detail',
+)
+PORTAL_REQUEST_TIMEOUT_SECONDS = float(os.environ.get('PORTAL_REQUEST_TIMEOUT_SECONDS', '10'))
 INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
 INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
 INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))

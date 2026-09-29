@@ -80,7 +80,12 @@ def auth_codes(request):
     profile = get_request_profile(request)
     if not profile:
         return Response({'detail': '登录状态无效或已过期。'}, status=status.HTTP_401_UNAUTHORIZED)
-    codes = ['developer:clue-view'] if profile.role == 'developer' else []
+    if profile.role == 'admin':
+        codes = ['role:view', 'role:manage', 'role:grant']
+    elif profile.role == 'developer':
+        codes = ['developer:clue-view']
+    else:
+        codes = []
     return Response({'code': 0, 'result': codes, 'message': 'ok', 'type': 'success'})
 
 
