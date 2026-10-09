@@ -25,3 +25,10 @@ class PortalMappingConflictError(PortalIntegrationError):
 
 class PortalClientError(PortalIntegrationError):
     code = 50001
+    # The portal retries HTTP failures, not merely a nonzero business code.
+    http_status = 503
+
+
+class PortalConfigurationError(PortalIntegrationError):
+    code = 50001
+    http_status = 503

@@ -9,3 +9,6 @@ DATABASES = {
 }
 
 PASSWORD_HASHERS = ['django.contrib.auth.hashers.MD5PasswordHasher']
+SECRET_KEY = 'test-only-medical-audit-key-not-for-production'
+CELERY_BROKER_URL = 'memory://'
+CELERY_RESULT_BACKEND = 'cache+memory://'

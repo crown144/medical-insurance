@@ -10,9 +10,12 @@
 import tempfile
 from unittest import mock
 
+from django.contrib.auth import get_user_model
 from django.test import TestCase, TransactionTestCase, override_settings
 from rest_framework.test import APIClient
 
+from accounts.auth import build_access_token
+from accounts.models import AccountProfile
 from rules.models import Rule
 
 from .models import ExtractedRule, RuleImportTask
@@ -23,6 +26,14 @@ from .services.importer import (
 )
 
 _MEDIA = tempfile.mkdtemp(prefix='ruleimport_test_media_')
+
+
+def authenticated_client():
+    user, _ = get_user_model().objects.get_or_create(username='rule-import-test')
+    AccountProfile.objects.get_or_create(user=user)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f'Bearer {build_access_token(user)}')
+    return client
 
 SAMPLE_RULES = [
     {
@@ -47,7 +58,7 @@ SAMPLE_RULES = [
 @override_settings(MEDIA_ROOT=_MEDIA)
 class UploadApiTests(TestCase):
     def setUp(self):
-        self.client = APIClient()
+        self.client = authenticated_client()
 
     @mock.patch('rule_import.views.run_rule_import_task.delay')
     def test_upload_valid_excel_creates_task(self, mock_delay):
@@ -144,7 +155,7 @@ class ConfirmImportTests(TestCase):
 @override_settings(MEDIA_ROOT=_MEDIA)
 class TaskApiTests(TestCase):
     def setUp(self):
-        self.client = APIClient()
+        self.client = authenticated_client()
         self.task = RuleImportTask.objects.create(
             task_name='api-task', status=RuleImportTask.Status.SUCCESS,
             table_count=2, rule_count=2,
@@ -273,7 +284,7 @@ class ConcurrencyTests(TestCase):
     @mock.patch('rule_import.views.run_rule_import_task.delay')
     def test_same_filename_no_overwrite(self, _mock_delay):
         from django.core.files.uploadedfile import SimpleUploadedFile
-        client = APIClient()
+        client = authenticated_client()
         paths = []
         for _ in range(2):
             f = SimpleUploadedFile('药品目录.xlsx', b'data-bytes',

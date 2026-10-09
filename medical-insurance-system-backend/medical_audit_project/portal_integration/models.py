@@ -56,3 +56,11 @@ class PortalActionLog(models.Model):
 
     def __str__(self):
         return f'{self.action_type}:{self.portal_user_id}:{self.result_code}'
+
+
+class PortalLoginCode(models.Model):
+    """Short-lived browser handoff shared by all Django workers via the DB."""
+
+    code_hash = models.CharField(max_length=64, unique=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    expires_at = models.DateTimeField(db_index=True)

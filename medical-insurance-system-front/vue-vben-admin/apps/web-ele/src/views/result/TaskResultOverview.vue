@@ -9,7 +9,7 @@ import { Document, Refresh, Search, View } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
 // 引入 API
-import { getDownloadUrl, getTaskListApi } from '../../api/task';
+import { downloadTaskReportApi, getTaskListApi } from '../../api/task';
 
 const router = useRouter();
 
@@ -95,10 +95,13 @@ const handleViewResult = (row: any) => {
 };
 
 // 下载报告
-const handleDownload = (row: any) => {
-  // 简单演示下载逻辑，实际可能需要弹窗选期数
-  const url = getDownloadUrl(row.id, 1);
-  window.open(url, '_blank');
+const handleDownload = async (row: any) => {
+  try {
+    await downloadTaskReportApi(row.id, 1);
+    ElMessage.success('报告已下载');
+  } catch {
+    ElMessage.error('报告下载失败，请确认登录状态后重试');
+  }
 };
 
 const formatStatus = (status: string) => {

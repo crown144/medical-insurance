@@ -81,6 +81,13 @@ class PortalActionService:
     def _ensure(self, portal_user_id):
         self.sync_service.ensure_binding(portal_user_id)
 
+    def sync_user(self, detail, *, action_type, trace_id):
+        portal_user_id = detail['id']
+        with transaction.atomic():
+            before = _snapshot(self._locked_optional_binding(portal_user_id))
+            binding = self.sync_service.sync_detail(detail, expected_id=portal_user_id)
+            _audit(action_type, portal_user_id, detail, before, _snapshot(binding), trace_id)
+
     def _locked_binding(self, portal_user_id):
         return PortalUserBinding.objects.select_for_update().select_related('user').get(
             portal_user_id=portal_user_id,
@@ -92,18 +99,18 @@ class PortalActionService:
         ).first()
 
     def set_app_admin(self, portal_user_id, *, trace_id):
-        self._ensure(portal_user_id)
         with transaction.atomic():
+            self._ensure(portal_user_id)
             binding = self._locked_binding(portal_user_id)
             before = _snapshot(binding)
             profile, _ = AccountProfile.objects.select_for_update().get_or_create(user=binding.user)
             if profile.role != AccountProfile.Role.ADMIN:
-                binding.previous_role = profile.role
                 profile.role = AccountProfile.Role.ADMIN
                 profile.save(update_fields=['role', 'updated_at'])
+            binding.previous_role = ''
             binding.is_admin = True
             binding.access_status = PortalUserBinding.AccessStatus.ENABLED
-            binding.user.is_active = True
+            binding.user.is_active = binding.profile_data.get('status') != 2
             binding.user.save(update_fields=['is_active'])
             binding.save(update_fields=['previous_role', 'is_admin', 'access_status', 'updated_at'])
             after = _snapshot(binding)
@@ -141,25 +148,29 @@ class PortalActionService:
             _audit('disable_user', portal_user_id, {'user_id': portal_user_id}, before, after, trace_id)
 
     def enable_user(self, portal_user_id, *, trace_id):
-        self._ensure(portal_user_id)
         with transaction.atomic():
+            self._ensure(portal_user_id)
             binding = self._locked_binding(portal_user_id)
             before = _snapshot(binding)
             profile, _ = AccountProfile.objects.select_for_update().get_or_create(user=binding.user)
-            if binding.previous_role in AccountProfile.Role.values:
+            if (
+                binding.access_status != PortalUserBinding.AccessStatus.ENABLED
+                and binding.previous_role in AccountProfile.Role.values
+            ):
                 profile.role = binding.previous_role
                 profile.save(update_fields=['role', 'updated_at'])
             binding.is_admin = profile.role == AccountProfile.Role.ADMIN
+            binding.previous_role = ''
             binding.access_status = PortalUserBinding.AccessStatus.ENABLED
-            binding.user.is_active = True
+            binding.user.is_active = binding.profile_data.get('status') != 2
             binding.user.save(update_fields=['is_active'])
-            binding.save(update_fields=['is_admin', 'access_status', 'updated_at'])
+            binding.save(update_fields=['previous_role', 'is_admin', 'access_status', 'updated_at'])
             after = _snapshot(binding)
             _audit('enable_user', portal_user_id, {'user_id': portal_user_id}, before, after, trace_id)
 
     def set_default_role(self, portal_user_id, *, trace_id):
-        self._ensure(portal_user_id)
         with transaction.atomic():
+            self._ensure(portal_user_id)
             binding = self._locked_binding(portal_user_id)
             before = _snapshot(binding)
             profile, _ = AccountProfile.objects.select_for_update().get_or_create(user=binding.user)
@@ -169,7 +180,7 @@ class PortalActionService:
             binding.previous_role = ''
             binding.is_admin = False
             binding.access_status = PortalUserBinding.AccessStatus.ENABLED
-            binding.user.is_active = True
+            binding.user.is_active = binding.profile_data.get('status') != 2
             binding.user.save(update_fields=['is_active'])
             binding.save(update_fields=['previous_role', 'is_admin', 'access_status', 'updated_at'])
             after = _snapshot(binding)
@@ -200,6 +211,7 @@ class PortalActionService:
             enabled = (
                 binding.access_status == PortalUserBinding.AccessStatus.ENABLED
                 and binding.user.is_active
+                and binding.profile_data.get('status') != 2
                 and not expired
             )
             result.append({

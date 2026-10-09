@@ -2,8 +2,10 @@ from django.contrib import admin
 from django.urls import path, include
 
 from . import views
+from portal_integration.sso import PortalSsoLoginView
 
 urlpatterns = [
+    path('api/sso/login', PortalSsoLoginView.as_view(), name='portal-sso-login'),
     path('admin/', admin.site.urls),
     path('api/user/info', views.user_info, name='user_info'),
     path('api/auth/login', views.auth_login, name='auth_login'),

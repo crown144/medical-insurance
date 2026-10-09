@@ -12,6 +12,7 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 import os
 from pathlib import Path
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,10 +22,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-=(snnc%&-_3k!umf&e*l(04fsuf(di@dgmn2-k^(g42*cm@$85'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-=(snnc%&-_3k!umf&e*l(04fsuf(di@dgmn2-k^(g42*cm@$85')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 ALLOWED_HOSTS = []
 
@@ -61,6 +62,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'accounts.middleware.ApiAccessMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -121,14 +123,21 @@ MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_
 PORTAL_BASE_URL = os.environ.get('PORTAL_BASE_URL', '').rstrip('/')
 PORTAL_APP_ID = os.environ.get('PORTAL_APP_ID', '')
 PORTAL_ENCRYPT_ENABLED = os.environ.get('PORTAL_ENCRYPT_ENABLED', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_ALLOW_PLAINTEXT = os.environ.get('PORTAL_ALLOW_PLAINTEXT', '').strip().lower() in {'1', 'true', 'yes', 'on'}
 PORTAL_PUBLIC_KEY = os.environ.get('PORTAL_PUBLIC_KEY', '')
 PORTAL_APP_PUBLIC_KEY = os.environ.get('PORTAL_APP_PUBLIC_KEY', '')
 PORTAL_APP_PRIVATE_KEY = os.environ.get('PORTAL_APP_PRIVATE_KEY', '')
 PORTAL_USER_DETAIL_PATH = os.environ.get(
     'PORTAL_USER_DETAIL_PATH',
-    '/api/security-manage-permission/app/user/detail',
+    '/api/security-manage-permission/v1/user/info',
 )
 PORTAL_REQUEST_TIMEOUT_SECONDS = float(os.environ.get('PORTAL_REQUEST_TIMEOUT_SECONDS', '10'))
+PORTAL_SSO_VALIDATE_PATH = os.environ.get(
+    'PORTAL_SSO_VALIDATE_PATH', '/api/security-manage-permission/app/cas/serviceValidate',
+)
+PORTAL_FRONTEND_URL = os.environ.get('PORTAL_FRONTEND_URL', '')
+PORTAL_CAS_LOGIN_URL = os.environ.get('PORTAL_CAS_LOGIN_URL', '')
+PORTAL_LOGIN_CALLBACK_URL = os.environ.get('PORTAL_LOGIN_CALLBACK_URL', '')
 INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
 INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
 INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))
@@ -183,6 +192,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
     # 如果你有其他前端地址，也加进来
 ]
+CORS_ALLOW_HEADERS = (*default_headers, 'accesstoken')
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
 # ... 文件末尾 ...
 
 # Celery Configuration Options

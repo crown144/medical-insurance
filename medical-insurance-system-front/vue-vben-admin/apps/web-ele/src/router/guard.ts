@@ -7,6 +7,7 @@ import { startProgress, stopProgress } from '@vben/utils';
 
 import { accessRoutes, coreRouteNames } from '#/router/routes';
 import { useAuthStore } from '#/store';
+import { portalEntryApi } from '#/api/core/auth';
 
 import { generateAccess } from './access';
 
@@ -67,6 +68,17 @@ function setupAccessGuard(router: Router) {
       // 明确声明忽略权限访问权限，则可以访问
       if (to.meta.ignoreAccess) {
         return true;
+      }
+
+      // 启用门户时，直接打开应用也要发起 CAS 登录（文档 3.1 步骤 2）。
+      try {
+        const entry = await portalEntryApi(to.fullPath);
+        if (entry.enabled && entry.authorizeUrl) {
+          window.location.replace(entry.authorizeUrl);
+          return false;
+        }
+      } catch {
+        // 门户配置/服务不可用时仍保留本地账号登录入口。
       }
 
       // 没有访问权限，跳转登录页面

@@ -22,7 +22,7 @@ DETAIL = {
 }
 
 
-@override_settings(PORTAL_ENCRYPT_ENABLED=False)
+@override_settings(PORTAL_ENCRYPT_ENABLED=False, PORTAL_ALLOW_PLAINTEXT=True, DEBUG=True)
 class PortalActionApiTests(APITestCase):
     def post(self, path, payload):
         return self.client.post(path, payload, format='json')
@@ -172,15 +172,17 @@ class EncryptedPortalProtocolTests(APITestCase):
                 private_key=self.PORTAL_PRIVATE,
                 public_key=self.portal_public,
                 mode=0,
+                asn1=True,
             )
             plaintext = json.dumps({'user_id': 'portal-user-1'}).encode('utf-8')
-            encrypted = base64.b64encode(portal_sender.encrypt(plaintext)).decode('ascii')
-            signature = portal_signer.sign_with_sm3(encrypted.encode('utf-8'), '3' * 64)
+            ciphertext = b'\x04' + portal_sender.encrypt(plaintext)
+            encrypted = base64.b64encode(ciphertext).decode('ascii')
+            signature = base64.b64encode(bytes.fromhex(portal_signer.sign_with_sm3(ciphertext, '3' * 64))).decode('ascii')
 
             response = self.client.post(
                 '/api/portal/actions/default-role',
-                {'data': encrypted},
-                format='json',
+                encrypted,
+                content_type='application/json',
                 HTTP_EYWA_SIGNATURE=signature,
             )
 
@@ -191,13 +193,14 @@ class EncryptedPortalProtocolTests(APITestCase):
                 private_key=self.PORTAL_PRIVATE,
                 public_key=self.app_public,
                 mode=0,
+                asn1=True,
             )
-            decrypted = portal_receiver.decrypt(base64.b64decode(response_ciphertext))
+            decrypted = portal_receiver.decrypt(base64.b64decode(response_ciphertext)[1:])
             self.assertIsNone(json.loads(decrypted.decode('utf-8')))
             self.assertTrue(
                 portal_receiver.verify_with_sm3(
-                    response['App-Signature'],
-                    response_ciphertext.encode('utf-8'),
+                    base64.b64decode(response['App-Signature']).hex(),
+                    base64.b64decode(response_ciphertext),
                 )
             )
 

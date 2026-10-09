@@ -12,8 +12,20 @@ def build_access_token(user) -> str:
     return signing.dumps({'user_id': user.pk}, salt=TOKEN_SALT, compress=True)
 
 
+def has_portal_access(user) -> bool:
+    from portal_integration.models import PortalUserBinding
+    from portal_integration.services.actions import is_binding_expired
+
+    binding = PortalUserBinding.objects.filter(user=user).first()
+    return not binding or (
+        binding.access_status == PortalUserBinding.AccessStatus.ENABLED
+        and binding.profile_data.get('status') != 2
+        and not is_binding_expired(binding)
+    )
+
+
 def get_request_profile(request):
-    authorization = request.headers.get('Authorization', '')
+    authorization = request.headers.get('Authorization', '') or request.headers.get('accessToken', '')
     token = authorization.removeprefix('Bearer ').strip()
     if not token:
         return None
@@ -27,14 +39,7 @@ def get_request_profile(request):
         # A portal-bound account can also become invalid because its application
         # access expired. Check on every request so an already issued token is
         # blocked immediately without maintaining a token blacklist.
-        from portal_integration.models import PortalUserBinding
-        from portal_integration.services.actions import is_binding_expired
-
-        binding = PortalUserBinding.objects.filter(user=user).first()
-        if binding and (
-            binding.access_status != PortalUserBinding.AccessStatus.ENABLED
-            or is_binding_expired(binding)
-        ):
+        if not has_portal_access(user):
             return None
         return AccountProfile.objects.select_related('user').get(user=user)
     except (signing.BadSignature, KeyError, TypeError, ValueError, get_user_model().DoesNotExist, AccountProfile.DoesNotExist):
