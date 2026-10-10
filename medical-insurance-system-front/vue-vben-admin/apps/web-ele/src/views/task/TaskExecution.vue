@@ -530,6 +530,15 @@ onUnmounted(() => {
           <el-descriptions-item label="Task Summary">
             {{ currentTaskDetail.summary || 'None' }}
           </el-descriptions-item>
+          <el-descriptions-item label="Calculation Review (Model)" :span="2">
+            <div v-if="currentTaskDetail.self_reflection" class="self-reflection">
+              {{ currentTaskDetail.self_reflection }}
+            </div>
+            <span v-else class="self-reflection-empty">
+              {{ currentTaskDetail.status === 'completed' ? 'No review is available for this task.' : 'A review will be generated after the task completes.' }}
+            </span>
+            <div class="self-reflection-tip">For auxiliary process verification only; violation decisions are unchanged.</div>
+          </el-descriptions-item>
           <el-descriptions-item label="Hospitalization IDs" :span="2">
             <div class="id-list">
               <el-tag
@@ -838,6 +847,23 @@ onUnmounted(() => {
 }
 .id-tag {
   font-family: monospace;
+}
+.self-reflection {
+  white-space: pre-line;
+  line-height: 1.65;
+  padding: 8px 10px;
+  border: 1px solid #d9ecff;
+  background: #f4f9ff;
+  color: #334155;
+  border-radius: 4px;
+}
+.self-reflection-empty {
+  color: #98a2b3;
+}
+.self-reflection-tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #98a2b3;
 }
 .time-timeline {
   margin-top: 24px;

@@ -51,7 +51,49 @@ def _demo_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
                 pass
             return patient_json
 
-    raise FileNotFoundError("Demo环境未找到病例数据")
+    raise FileNotFoundError("Demo environment patient data was not found")
+
+
+def build_task_self_reflection(task, processed_count, total_violation_count, rule_count):
+    """Generate a lightweight task-level calculation review without patient details."""
+    requested_count = len(task.hospitalization_ids or [])
+    prompt = f"""You are a calculation review assistant for medical insurance audit tasks.
+
+Use only the task statistics below to check whether processing is complete and whether any result needs manual attention. Do not recalculate patient records, invent violations, or alter existing conclusions.
+
+Task ID: {task.id}
+Audit schemes: {', '.join(task.selected_schemas or []) or 'None selected'}
+Associated rules: {rule_count}
+Planned cases: {requested_count}
+Processed cases: {processed_count}
+Recorded violations: {total_violation_count}
+
+Reply in exactly three concise lines, no more than 200 words:
+Conclusion: Passed or Attention required.
+Verification: State which statistical relationships were checked.
+Recommendation: Write "No additional action required" when normal; otherwise request manual confirmation when case counts differ or the rule count is zero.
+"""
+    try:
+        # Reuse the configured OpenAI-compatible service with one short request.
+        from openai import OpenAI
+
+        client = OpenAI(
+            api_key=getattr(settings, 'RULE_IMPORT_LLM_API_KEY', '') or 'EMPTY',
+            base_url=getattr(settings, 'RULE_IMPORT_LLM_BASE_URL', ''),
+            timeout=20,
+        )
+        response = client.chat.completions.create(
+            model=getattr(settings, 'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen'),
+            messages=[{'role': 'user', 'content': prompt}],
+            temperature=0,
+        )
+        reflection = (response.choices[0].message.content or '').strip()
+        if reflection:
+            return reflection[:2000]
+        return 'The model returned no review text; the calculation results were saved successfully.'
+    except Exception as exc:  # noqa: BLE001 - review is auxiliary and must isolate model failures
+        logger.warning('Task %s calculation review was not generated: %s', task.id, exc)
+        return 'The model review was not generated; saved calculation results and violation decisions are unaffected.'
 
 
 def get_patient_data(hospitalization_id: str, mdc_org_cd: str = None):
@@ -144,6 +186,7 @@ def run_audit_task(task_id):
             task.started_at = timezone.now()
             task.completed_at = None
             task.summary = "任务开始执行..."
+            task.self_reflection = ''
             task.save()
 
         logger.info(f"开始执行任务 ID: {task.id}, 名称: {task.name}")
@@ -343,11 +386,18 @@ def run_audit_task(task_id):
                 continue
         
         # --- 3. 任务收尾 ---
+        self_reflection = build_task_self_reflection(
+            task=task,
+            processed_count=processed_count,
+            total_violation_count=total_violation_count,
+            rule_count=len(all_rules_for_task),
+        )
         with transaction.atomic():
             # 重新获取 task 对象，以避免并发问题和状态陈旧
             task_to_complete = Task.objects.get(id=task_id)
             task_to_complete.status = 'completed'
             task_to_complete.summary = f"任务完成。共处理 {processed_count}/{len(task.hospitalization_ids)} 个病例，发现 {total_violation_count} 项违规。"
+            task_to_complete.self_reflection = self_reflection
             task_to_complete.save()
 
     except Task.DoesNotExist:

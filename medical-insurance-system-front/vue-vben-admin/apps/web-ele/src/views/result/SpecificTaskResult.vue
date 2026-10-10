@@ -3,10 +3,11 @@ import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import { Refresh, Search, View } from '@element-plus/icons-vue';
-import { ElMessage } from 'element-plus';
+import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { baseRequestClient } from '../../api/request';
 import { getTaskResultListApi } from '../../api/result';
+import { executeTaskApi } from '../../api/task';
 import { getRuleTypeLabel } from '../../config/rule-type';
 
 const route = useRoute();
@@ -16,6 +17,7 @@ const taskId = ref(String(route.query.taskId || ''));
 const taskName = ref(String(route.query.taskName || ''));
 
 const isLoading = ref(false);
+const isRecalculating = ref(false);
 const tableData = ref<any[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
@@ -149,6 +151,32 @@ const goToAuditDetail = (row: any) => {
   });
 };
 
+const requestModelRecalculation = async () => {
+  if (!taskId.value || isRecalculating.value) return;
+  try {
+    await ElMessageBox.confirm(
+      'The system will reload patient records and run the rules using the current task configuration. Existing violation details will be replaced by the new results.',
+      'Confirm recalculation',
+      {
+        confirmButtonText: 'Recalculate',
+        cancelButtonText: 'Cancel',
+        type: 'warning',
+      },
+    );
+    isRecalculating.value = true;
+    await executeTaskApi(Number(taskId.value));
+    ElMessage.success('Recalculation started. Redirecting to task execution.');
+    await router.push({
+      name: 'ExecuteRun',
+      query: { taskId: taskId.value },
+    });
+  } catch (error) {
+    if (error !== 'cancel') console.error('Failed to recalculate task', error);
+  } finally {
+    isRecalculating.value = false;
+  }
+};
+
 onMounted(() => {
   if (taskId.value) {
     fetchTaskInfo();
@@ -197,6 +225,15 @@ onMounted(() => {
                 Search
               </el-button>
               <el-button :icon="Refresh" @click="handleReset">Reset</el-button>
+              <el-button
+                type="warning"
+                :icon="Refresh"
+                :loading="isRecalculating"
+                :disabled="!taskId"
+                @click="requestModelRecalculation"
+              >
+                Recalculate with Model
+              </el-button>
             </el-col>
           </el-row>
         </el-form>

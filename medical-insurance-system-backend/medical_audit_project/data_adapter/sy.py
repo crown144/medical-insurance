@@ -9,35 +9,9 @@ import requests
 from typing import Dict, List, Any, Optional, Union
 import re
 import glob
-
-try:
-    from .medical_configs import build_converter_config, build_module_queries
-except ImportError:
-    from medical_configs import build_converter_config, build_module_queries
-
-try:
-    from . import llm_extractors
-except ImportError:
-    try:
-        import llm_extractors
-    except ImportError:
-        class _MissingLLMExtractors:
-            def __getattr__(self, name):
-                raise ImportError("未找到 llm_extractors.py，无法执行病历文书大模型抽取")
-
-        llm_extractors = _MissingLLMExtractors()
-
-try:
-    from . import disease_rules
-except ImportError:
-    try:
-        import disease_rules
-    except ImportError:
-        class _EmptyDiseaseRules:
-            ICD10_DISEASE_RULES = {}
-            ICD9_DISEASE_RULES = {}
-
-        disease_rules = _EmptyDiseaseRules()
+from medical_configs import build_converter_config, build_module_queries
+import llm_extractors
+import disease_rules
 
 # =========================
 # OceanBase 数据库配置
@@ -58,7 +32,7 @@ FIXED_OUTPUT_DIR = "/home/user/病历分析结果"
 def delete_old_files_for_inhos_no(result_dir, inhos_no, current_file):
     """
     删除同住院号的旧文件，保留当前生成的文件
-
+    
     Args:
         result_dir: 结果目录路径
         inhos_no: 住院号
@@ -67,11 +41,11 @@ def delete_old_files_for_inhos_no(result_dir, inhos_no, current_file):
     try:
         # 获取当前文件名
         current_filename = os.path.basename(current_file)
-
+        
         # 查找同住院号的所有文件
         pattern = os.path.join(result_dir, f"patient_{inhos_no}_*.json")
         matching_files = glob.glob(pattern)
-
+        
         deleted_count = 0
         for file_path in matching_files:
             filename = os.path.basename(file_path)
@@ -83,12 +57,12 @@ def delete_old_files_for_inhos_no(result_dir, inhos_no, current_file):
                     deleted_count += 1
                 except Exception as e:
                     print(f"    删除文件 {filename} 时出错: {e}")
-
+        
         if deleted_count > 0:
             print(f"    共删除 {deleted_count} 个同住院号的旧文件")
         else:
             print(f"    未发现同住院号的旧文件")
-
+            
     except Exception as e:
         print(f"    删除旧文件时出错: {e}")
 
@@ -132,11 +106,11 @@ class MedicalRecordConverter:
         try:
             if value is None or value == "NULL" or value == "" or str(value).strip() == "":
                 return "xxx"
-
+            
             # 处理数字类型
             if isinstance(value, (int, float)):
                 return str(value)
-
+            
             # 处理字符串类型
             if isinstance(value, str):
                 # 去除前后空格
@@ -144,7 +118,7 @@ class MedicalRecordConverter:
                 if cleaned_value == "" or cleaned_value.upper() == "NULL":
                     return "xxx"
                 return cleaned_value
-
+            
             # 其他类型转换为字符串
             return str(value)
         except Exception as e:
@@ -156,16 +130,16 @@ class MedicalRecordConverter:
         try:
             if not date_str or date_str == "NULL" or date_str == "" or str(date_str).strip() == "":
                 return "xxx"
-
+            
             # 如果已经是datetime对象
             if isinstance(date_str, datetime):
                 return date_str.strftime("%Y-%m-%d %H:%M:%S")
-
+            
             # 转换为字符串并清理
             date_str = str(date_str).strip()
             if date_str.upper() == "NULL" or date_str == "":
                 return "xxx"
-
+            
             # 尝试多种日期格式
             date_formats = [
                 "%Y-%m-%d %H:%M:%S",
@@ -176,18 +150,18 @@ class MedicalRecordConverter:
                 "%Y/%m/%d %H:%M:%S",
                 "%Y/%m/%d"
             ]
-
+            
             for fmt in date_formats:
                 try:
                     parsed_date = datetime.strptime(date_str, fmt)
                     return parsed_date.strftime("%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     continue
-
+            
             # 如果所有格式都失败，返回原始字符串（可能是有效的日期格式但不在我们的列表中）
             print(f"警告: 无法解析日期格式 - {date_str}")
             return date_str
-
+            
         except Exception as e:
             print(f"警告: format_date处理异常 - 日期: {date_str}, 错误: {e}")
             return "xxx"
@@ -197,18 +171,18 @@ class MedicalRecordConverter:
         try:
             if not fields or not isinstance(fields, (list, tuple)):
                 return "xxx"
-
+            
             values = []
             for field in fields:
                 if not field:  # 跳过空字段名
                     continue
-
+                    
                 value = data.get(field, "")
                 if value and str(value).strip() != "" and str(value).upper() != "NULL":
                     cleaned_value = str(value).strip()
                     if cleaned_value:  # 确保清理后的值不为空
                         values.append(cleaned_value)
-
+            
             return separator.join(values) if values else "xxx"
         except Exception as e:
             print(f"警告: concat_fields处理异常 - 字段: {fields}, 错误: {e}")
@@ -220,12 +194,12 @@ class MedicalRecordConverter:
             if not fields or not units or len(fields) != len(units):
                 print(f"警告: 字段和单位数量不匹配 - 字段: {len(fields) if fields else 0}, 单位: {len(units) if units else 0}")
                 return "xxx"
-
+            
             values = []
             for i, (field, unit) in enumerate(zip(fields, units)):
                 if not field:  # 跳过空字段名
                     continue
-
+                    
                 value = data.get(field, "")
                 if value and str(value).strip() != "" and str(value).upper() != "NULL":
                     cleaned_value = str(value).strip()
@@ -233,10 +207,10 @@ class MedicalRecordConverter:
                         prefix = ""
                         if prefixes and i < len(prefixes) and prefixes[i]:
                             prefix = f"{prefixes[i]}"
-
+                        
                         unit_str = unit if unit else ""
                         values.append(f"{prefix}{cleaned_value}{unit_str}")
-
+            
             return separator.join(values) if values else "xxx"
         except Exception as e:
             print(f"警告: concat_fields_with_units处理异常 - 字段: {fields}, 错误: {e}")
@@ -367,7 +341,7 @@ class MedicalRecordConverter:
     # 在MedicalRecordConverter类中
     def process_nursing_records(self, data_rows, vital_signs=None):
         if not data_rows: return []
-        results = [{"护理记录名": "xxx", "时间": "xxx", "内容": "xxx"}]
+        results = [{"护理记录名": "xxx", "时间": "xxx", "内容": "xxx"}]  
         # 使用传入的生命体征或默认值
         default_vital_signs = {"T": "xxx", "P": "xxx", "R": "xxx", "BP高": "xxx", "BP低": "xxx"}
         vital_signs = vital_signs or default_vital_signs
@@ -480,11 +454,11 @@ class MedicalRecordConverter:
     # 手术记录处理
     def process_surgery_records(self, data_rows):
         if not data_rows: return []
-
+        
         results = []
         for row in data_rows:
             record = {}
-
+            
             # 基础字段映射
             for target, source in self.module_mappings.get("手术记录", {}).items():
                 if source:
@@ -494,10 +468,10 @@ class MedicalRecordConverter:
                         record[target] = self.format_value(row.get(source))
                 else:
                     record[target] = "xxx"
-
+            
             # 应用特殊字段处理（字段拼接和带单位字段）
             record = self.apply_special_fields(row, "手术记录", record)
-
+            
             # 手术记录特有的额外处理
             # 如果手术经过为空，尝试从其他相关字段获取信息
             if record.get("手术经过") == "xxx":
@@ -507,7 +481,7 @@ class MedicalRecordConverter:
                     if value and value != "NULL" and value != "":
                         record["手术经过"] = self.format_value(value)
                         break
-
+            
             # 如果病灶描述为空，尝试从其他相关字段获取
             if record.get("病灶描述") == "xxx":
                 alternative_fields = ["PTHLG_DSCPT", "LSNS_FNDG", "OPRT_FNDG"]
@@ -516,7 +490,7 @@ class MedicalRecordConverter:
                     if value and value != "NULL" and value != "":
                         record["病灶描述"] = self.format_value(value)
                         break
-
+            
             # 如果术中情况为空，尝试从其他相关字段获取
             if record.get("术中情况") == "xxx":
                 alternative_fields = ["OPRT_CNDTN", "INTR_OPRT_STTS", "OPRT_PRCS"]
@@ -525,7 +499,7 @@ class MedicalRecordConverter:
                     if value and value != "NULL" and value != "":
                         record["术中情况"] = self.format_value(value)
                         break
-
+            
             results.append(record)
         return results
 
@@ -536,15 +510,15 @@ class MedicalRecordConverter:
         """
         if not data_rows:
             return []
-
+        
         # 按药品名分组，构建药品信息
         medication_groups = {}
-
+        
         for row in data_rows:
             medication_name = self.format_value(row.get("CHRG_ITM_NM", ""))
             if medication_name == "xxx" or not medication_name:
                 continue
-
+            
             # 如果该药品名还未处理过，初始化药品信息
             if medication_name not in medication_groups:
                 medication_groups[medication_name] = {
@@ -555,7 +529,7 @@ class MedicalRecordConverter:
                     "药品开具次数": "xxx",  # 稍后计算
                     "处方记录": []  # 存储该药品的所有开药记录
                 }
-
+            
             # 构建第n次开药记录
             prescription_record = {
                 "药品收费时间": self.format_date(row.get("CHRG_DT")),
@@ -566,17 +540,17 @@ class MedicalRecordConverter:
                 "药品使用次剂量单位": self.format_value(row.get("DRG_USE_ONCE_DOSG_UNT", "")),
                 "药品使用频次名称": self.format_value(row.get("DRG_USE_FRQ_NM", ""))
             }
-
+            
             # 将处方记录添加到对应药品
             medication_groups[medication_name]["处方记录"].append(prescription_record)
-
+        
         # 构建最终结构
         result = []
         for medication_name, medication_info in medication_groups.items():
             # 计算药品开具次数
             prescription_count = len(medication_info["处方记录"])
             medication_info["药品开具次数"] = str(prescription_count)
-
+            
             prescriptions = medication_info["处方记录"]
             prescriptions.sort(key=lambda x: x.get("药品收费时间", ""))
 
@@ -589,12 +563,12 @@ class MedicalRecordConverter:
                 "药品开具次数": medication_info["药品开具次数"],
                 "开药信息": prescriptions,
             }
-
+            
             result.append(drug_info)
-
+        
         # 按药品名排序
         result.sort(key=lambda x: x.get("药品名", ""))
-
+        
         return result
 
 
@@ -626,13 +600,13 @@ class MultiModelAPI:
             "化疗记录": "qwen2.5-7B",
             "首次病程记录": "qwen2.5-7B",
         }
-
+        
         self.lock = threading.Lock()
 
     def _log(self, message: str) -> None:
         if self.verbose:
             print(message)
-
+        
     def send_chat_completion_request(self, model_config, message_content, temperature=0.01):
         """发送请求到指定模型"""
         url = model_config["url"]
@@ -645,9 +619,9 @@ class MultiModelAPI:
             "temperature": temperature,
             "max_tokens": 5000,
         }
-
+        
         json_data = json.dumps(data)
-
+        
         try:
             response = requests.post(url, headers=headers, data=json_data)
             if response.status_code == 200:
@@ -656,7 +630,7 @@ class MultiModelAPI:
                 raise Exception(f"Request failed with status {response.status_code}: {response.text}")
         except Exception as e:
             return f"An error occurred: {type(e).__name__} - {e}"
-
+    
     def get_model_for_module(self, module_name):
         """根据模块名称获取分配的模型"""
         pool_name = self.module_assignments.get(module_name, "qwen_pool")
@@ -669,11 +643,11 @@ class MultiModelAPI:
             idx = self.pool_counters.get(pool_name, 0) % len(pool)
             self.pool_counters[pool_name] = idx + 1
         return pool[idx]
-
+    
     def process_module_parallel(self, module_tasks):
         """并行处理多个模块任务"""
         results = {}
-
+        
         # 使用线程池并行处理
         max_workers = min(self.max_workers, max(1, len(module_tasks)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -682,14 +656,14 @@ class MultiModelAPI:
             for module_name, prompt in module_tasks.items():
                 model_config = self.get_model_for_module(module_name)
                 self._log(f"分配模块 '{module_name}' 给模型 '{model_config['name']}'")
-
+                
                 future = executor.submit(
-                    self.send_chat_completion_request,
-                    model_config,
+                    self.send_chat_completion_request, 
+                    model_config, 
                     prompt
                 )
                 future_to_module[future] = module_name
-
+            
             # 收集结果
             for future in as_completed(future_to_module):
                 module_name = future_to_module[future]
@@ -700,26 +674,26 @@ class MultiModelAPI:
                 except Exception as e:
                     print(f"模块 '{module_name}' 处理失败: {e}")
                     results[module_name] = f"处理失败: {e}"
-
+        
         return results
-
+    
     def chat_method_for_module(self, module_name, content):
         """为特定模块处理内容"""
         model_config = self.get_model_for_module(module_name)
         return self.send_chat_completion_request(model_config, content)
-
+    
     def process_documents_parallel(self, document_tasks):
         """并行处理多个文档任务
-
+        
         Args:
             document_tasks: dict, 格式为 {文档类型: (原始数据, 处理函数)}
-
+        
         Returns:
             dict: 处理后的结果，格式为 {文档类型: 提取结果}
         """
         self._log(f"开始并行处理 {len(document_tasks)} 个文档...")
         results = {}
-
+        
         # 使用线程池并行处理
         max_workers = min(self.max_workers, max(1, len(document_tasks)))
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -737,7 +711,7 @@ class MultiModelAPI:
                         print(f"文档 '{doc_type}' 无数据且构建默认结果失败: {e}")
                         results[doc_type] = {}
                     self._log(f"文档 '{doc_type}' 无数据，使用默认结构")
-
+            
             # 收集结果
             for future in as_completed(future_to_doc):
                 doc_type = future_to_doc[future]
@@ -756,7 +730,7 @@ class MultiModelAPI:
                     except Exception as e2:
                         print(f"文档 '{doc_type}' 构建默认结构失败: {e2}")
                         results[doc_type] = {}
-
+        
         self._log("所有文档并行处理完成")
         return results
 
@@ -1398,7 +1372,7 @@ class MedicalDataProcessor:
         quoted = ", ".join(cls._quote_sql_value(no) for no in inhos_nos)
         mdc_org_cd = cls._quote_sql_value(mdc_org_cd) if mdc_org_cd else None
         mdc_condition = f"AND MDC_ORG_CD = {mdc_org_cd}" if mdc_org_cd else ""
-
+        
         queries = {
             "入出院文书合并": f"""
                 SELECT *, INVLD_FLG
@@ -1442,6 +1416,7 @@ class MedicalDataProcessor:
             "收费": f"""
                 SELECT
                     fee.INHOS_NO,
+                    fee.FEE_DTL_NO,
                     fee.CHRG_ITM_NM,
                     fee.CHRG_ITM_CD,
                     fee.CHRG_DT,
@@ -1950,13 +1925,13 @@ class MedicalDataProcessor:
                 "name": "ODS_FACT_DSCG_RCD",
                 "columns": ["ADMN_DIAG_WTM_DIAG_NM", "ADMN_DIAG_TCM_DSES_NM", "CDT_TNOVR_NM"],
                 "query": f"""
-                    SELECT
-                        ADMN_DIAG_WTM_DIAG_NM as DSCG_ADMN_DIAG_WTM_DIAG_NM,
-                        ADMN_DIAG_TCM_DSES_NM as DSCG_ADMN_DIAG_TCM_DSES_NM,
-                        CDT_TNOVR_NM,
-                        INHOS_NO as DSCG_INHOS_NO,
+                    SELECT 
+                        ADMN_DIAG_WTM_DIAG_NM as DSCG_ADMN_DIAG_WTM_DIAG_NM, 
+                        ADMN_DIAG_TCM_DSES_NM as DSCG_ADMN_DIAG_TCM_DSES_NM, 
+                        CDT_TNOVR_NM, 
+                        INHOS_NO as DSCG_INHOS_NO, 
                         INVLD_FLG
-                    FROM ODS_FACT_DSCG_RCD
+                    FROM ODS_FACT_DSCG_RCD 
                     WHERE INHOS_NO = '{self.inhos_no}' {mdc_condition};
                 """
             },
@@ -1964,11 +1939,11 @@ class MedicalDataProcessor:
                 "name": "ODS_FACT_TCM_MDC_RCD_HMPG",
                 "columns": ["BED_NO"],
                 "query": f"""
-                    SELECT
-                        BED_NO,
-                        INHOS_NO as TCM_INHOS_NO,
-                        INVLD_FLG
-                    FROM ODS_FACT_TCM_MDC_RCD_HMPG
+                    SELECT 
+                        BED_NO, 
+                        INHOS_NO as TCM_INHOS_NO, 
+                        INVLD_FLG 
+                    FROM ODS_FACT_TCM_MDC_RCD_HMPG 
                     WHERE INHOS_NO = '{self.inhos_no}' {mdc_condition};
                 """
             },
@@ -1976,11 +1951,11 @@ class MedicalDataProcessor:
                 "name": "ODS_FACT_ADMN_MDC_HTR_RCD",
                 "columns": ["HGT", "WGT", "BRF_DSES_HST", "TPR", "PLS_RATE", "BRTH_FRQ", "STLC_PRS", "DTLC_PRS"],
                 "query": f"""
-                    SELECT
-                        HGT, WGT, BRF_DSES_HST, TPR, PLS_RATE, BRTH_FRQ, STLC_PRS, DTLC_PRS,
-                        INHOS_NO as ADMN_INHOS_NO,
-                        INVLD_FLG
-                    FROM ODS_FACT_ADMN_MDC_HTR_RCD
+                    SELECT 
+                        HGT, WGT, BRF_DSES_HST, TPR, PLS_RATE, BRTH_FRQ, STLC_PRS, DTLC_PRS, 
+                        INHOS_NO as ADMN_INHOS_NO, 
+                        INVLD_FLG 
+                    FROM ODS_FACT_ADMN_MDC_HTR_RCD 
                     WHERE INHOS_NO = '{self.inhos_no}' {mdc_condition};
                 """
             },
@@ -1989,12 +1964,12 @@ class MedicalDataProcessor:
                 "columns": ["MAIN_TEST_RSLT", "LBRTR_EXAM_MAIN_CSTT", "ESPCL_EXAM", "PSTV_AXLR_EXAM_RSLT",
                             "OTHR_MDC_DSPST", "DSCG_CDT", "DIAG_TRTMT_PRCS_DSCPT", "DSCG_ODR"],
                 "query": f"""
-                    SELECT
-                        MAIN_TEST_RSLT, LBRTR_EXAM_MAIN_CSTT, ESPCL_EXAM, PSTV_AXLR_EXAM_RSLT,
-                        OTHR_MDC_DSPST, DSCG_CDT, DIAG_TRTMT_PRCS_DSCPT, DSCG_ODR,
-                        INHOS_NO as DSCG_MDC_INHOS_NO,
-                        INVLD_FLG
-                    FROM ODS_FACT_DSCG_MDC_HTR_RCD
+                    SELECT 
+                        MAIN_TEST_RSLT, LBRTR_EXAM_MAIN_CSTT, ESPCL_EXAM, PSTV_AXLR_EXAM_RSLT, 
+                        OTHR_MDC_DSPST, DSCG_CDT, DIAG_TRTMT_PRCS_DSCPT, DSCG_ODR, 
+                        INHOS_NO as DSCG_MDC_INHOS_NO, 
+                        INVLD_FLG 
+                    FROM ODS_FACT_DSCG_MDC_HTR_RCD 
                     WHERE INHOS_NO = '{self.inhos_no}' {mdc_condition};
                 """
             }
@@ -2111,7 +2086,7 @@ class MedicalDataProcessor:
             return result
 
     def _filter_medication_records_from_fee(self, fee_records):
-            drug_categories = {"中成药", "中草药", "西药"}
+            drug_categories = {"中成药", "中草药", "西药", "药费", "药品", "药品费", "西药费", "中药费"}
             medication_records = []
             for record in fee_records or []:
                 fee_category = str(record.get("FEE_CGY_NM") or "").strip()
@@ -2423,7 +2398,7 @@ class MedicalDataProcessor:
     def process_documents_parallel_wrapper(self, document_tasks):
         """包装器方法，调用全局多模型API的并行处理功能"""
         return multi_model_api.process_documents_parallel(document_tasks)
-
+    
     def process_all_and_export(self, output_file=None, existing_icd10=None, output_root=None):
         # 定义应包含的所有模块
         required_modules = ["病理", "医嘱", "检查", "检验", "诊断", "手术记录", "收费", "医保", "治疗用药", "手术用药"]
@@ -2443,9 +2418,9 @@ class MedicalDataProcessor:
         # ======================================================
         # 第2.1步：并行处理所有需要AI分析的文档
         # ======================================================
-
+        
         print("开始并行处理所有AI文档...")
-
+        
         # 构建完整的并行任务字典
         all_parallel_tasks = {
             "入院记录": (admission_records, self.extract_admission_record),
@@ -2457,17 +2432,17 @@ class MedicalDataProcessor:
             "化疗记录": (chemotherapy_records, self.extract_chemotherapy_records)
             # 移除手术记录的AI处理，只使用结构化数据
         }
-
+        
         # 执行并行处理
         all_parallel_results = self.process_documents_parallel_wrapper(all_parallel_tasks)
-
+        
         extracted_admission = all_parallel_results.get("入院记录", {})
         if not isinstance(extracted_admission, dict):
             extracted_admission = {}
         # 优先使用数据库的创建时间，如果没有或为xxx，则使用大模型提取的时间
         db_time = extracted_admission.get("创建时间", "xxx")
         llm_time = extracted_admission.get("时间", "xxx")
-
+        
         if db_time != "xxx":
             record_time = db_time
             print(f"入院记录使用数据库创建时间: {record_time}")
@@ -2557,16 +2532,16 @@ class MedicalDataProcessor:
         # ======================================================
         # 第4步：整理并行处理结果
         # ======================================================
-
+        
         print("整理并行处理结果...")
-
+        
         # 首次病程记录
         extracted_first_course = all_parallel_results.get("首次病程记录", {})
         if extracted_first_course:
             # 优先使用数据库的创建时间，如果没有或为xxx，则使用大模型提取的时间
             db_time = extracted_first_course.get("创建时间", "xxx")
             llm_time = extracted_first_course.get("时间", "xxx")
-
+            
             if db_time != "xxx":
                 record_time = db_time
                 print(f"首次病程记录使用数据库创建时间: {record_time}")
@@ -2670,7 +2645,7 @@ class MedicalDataProcessor:
         # 优先使用数据库的创建时间，如果没有或为xxx，则使用大模型提取的时间
         db_time = discharge_extract.get("创建时间", "xxx")
         llm_time = discharge_extract.get("时间", "xxx")
-
+        
         if db_time != "xxx":
             record_time = db_time
             print(f"出院记录使用数据库创建时间: {record_time}")
@@ -2980,7 +2955,7 @@ def main():
                     saved_files = result_data.get("_saved_files") or [current_output_file_path]
                     debug(f"导出文件: {saved_files}")
                     successfully_processed_manual.append(current_inhos_no)
-
+                    
                     # 删除同住院号的旧文件
                     delete_old_files_for_inhos_no_recursive(manual_output_dir, current_inhos_no, saved_files)
                 elif result_data and result_data.get("提前终止"):
@@ -3003,7 +2978,7 @@ def main():
                         debug(f"数据库连接已关闭: {current_inhos_no}")
                     except Exception as e_close_proc:
                         info(f"关闭数据库连接出错: {current_inhos_no} | {e_close_proc}")
-
+        
         info(f"\n处理完成: 成功 {len(successfully_processed_manual)}，失败/终止 {len(failed_to_process_manual)}。")
         if verbose:
             if successfully_processed_manual:
@@ -3014,7 +2989,7 @@ def main():
                 info("失败/终止住院号:")
                 for no in failed_to_process_manual:
                     info(f"- {no}")
-
+        
         total_json_files_in_manual_dir = 0
         if os.path.exists(manual_output_dir):
             total_json_files_in_manual_dir = len(glob.glob(os.path.join(manual_output_dir, "**", "patient_*.json"), recursive=True))
@@ -3156,7 +3131,7 @@ def main():
                 except ValueError:
                     info("处理数量输入无效，将使用默认值20。")
                     process_count = 20
-
+            
             final_inhos_to_process = []
             if process_count > 0 and total_records > 0:
                 process_count = min(process_count, total_records)
@@ -3171,7 +3146,7 @@ def main():
                             processed_inhos_in_output_dir.add(match.group(1))
                 debug(f"输出目录已处理住院号数量: {len(processed_inhos_in_output_dir)}")
 
-
+                
                 seen_in_this_batch = set()
                 for inhos_no_item in inhos_nos_from_csv:
                     clean_inhos_no = str(inhos_no_item).strip()
@@ -3205,7 +3180,7 @@ def main():
                     if confirm_processing != 'y':
                         info("操作已取消。")
                         final_inhos_to_process = [] # 清空列表，不进行处理
-
+            
             elif process_count == 0: # 用户选择不处理
                  final_inhos_to_process = []
             else: # total_records is 0
@@ -3248,10 +3223,10 @@ def main():
 
                         if is_in_icd10_range:
                             debug(f"ICD10命中: {current_inhos_no} | {main_icd10_info['code']} | {matched_range_part}")
-
+                            
                             output_file_name = f"patient_{current_inhos_no}_{timestamp}.json"
                             current_output_file_path = os.path.join(final_json_output_dir, output_file_name)
-
+                            
                             result_data = processor.process_all_and_export(output_file=current_output_file_path, existing_icd10=main_icd10_info, output_root=final_json_output_dir)
                             if result_data and not result_data.get("提前终止"):
                                 info(f"完成: {current_inhos_no}")
@@ -3259,7 +3234,7 @@ def main():
                                 debug(f"导出文件: {saved_files}")
                                 successfully_generated_files.extend(saved_files)
                                 matched_records_icd10.append(current_inhos_no) # 只有成功导出才加入此列表
-
+                                
                                 # 删除同住院号的旧文件
                                 delete_old_files_for_inhos_no_recursive(final_json_output_dir, current_inhos_no, saved_files)
                             elif result_data and result_data.get("提前终止"):
@@ -3286,7 +3261,7 @@ def main():
                                 # print(f"住院号 {current_inhos_no} 的数据库连接已关闭。") # 可以取消注释以调试
                             except Exception as e_close_proc:
                                 info(f"关闭数据库连接出错: {current_inhos_no} | {e_close_proc}")
-
+            
 # --- CSV处理模式的汇总和CSV更新 ---
             info(f"\nCSV处理完成汇总:")
             if final_inhos_to_process: # 检查本轮是否有计划处理的住院号
@@ -3446,3 +3421,4 @@ def main():
 if __name__ == "__main__":
     main()
     # print("脚本执行完毕.")
+

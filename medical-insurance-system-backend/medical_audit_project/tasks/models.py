@@ -20,6 +20,7 @@ class Task(models.Model):
     hospitalization_ids = models.JSONField("待审核住院号列表")
     mdc_org_cd = models.CharField("医疗机构代码", max_length=50, blank=True, default='')
     summary = models.TextField("任务摘要/报告", blank=True, null=True)
+    self_reflection = models.TextField("计算自检结果", blank=True, default='')
     created_at = models.DateTimeField("创建时间", auto_now_add=True)
     started_at = models.DateTimeField("开始时间", null=True, blank=True)
     completed_at = models.DateTimeField("完成时间", null=True, blank=True)

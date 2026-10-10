@@ -98,7 +98,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': '555321',
+        'PASSWORD': 'Ecust@1234',
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },

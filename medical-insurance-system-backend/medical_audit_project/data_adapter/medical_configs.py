@@ -42,6 +42,7 @@ def build_converter_config() -> Dict[str, Any]:
         },
         "收费": {
             "住院号": "INHOS_NO",
+            "费用明细编号":"FEE_DTL_NO",
             "收费项目名称": "CHRG_ITM_NM",
             "收费项目代码": "CHRG_ITM_CD",
             "收费日期": "CHRG_DT",
@@ -202,35 +203,35 @@ def build_converter_config() -> Dict[str, Any]:
 def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
     return {
         "病理": f"""
-                SELECT rcd.INHOS_NO as RCD_INHOS_NO, rcd.PTHLG_RCD_NO, rcd.PTHLG_EXAM_TP_NM, rcd.EXAM_ITM_NM, rcd.BPSY_PRT_NM, rcd.SPCM_CLLT_WAY_NM, rcd.SPCM_CGY_NM, rcd.EXAM_DT,
-                    rpt.PTHLG_DIAG, rpt.EXAM_RPT_RSLT_MICSCPC, rpt.EXAM_RPT_RSLT_MACSCPC,
+                SELECT rcd.INHOS_NO as RCD_INHOS_NO, rcd.PTHLG_RCD_NO, rcd.PTHLG_EXAM_TP_NM, rcd.EXAM_ITM_NM, rcd.BPSY_PRT_NM, rcd.SPCM_CLLT_WAY_NM, rcd.SPCM_CGY_NM, rcd.EXAM_DT, 
+                    rpt.PTHLG_DIAG, rpt.EXAM_RPT_RSLT_MICSCPC, rpt.EXAM_RPT_RSLT_MACSCPC, 
                     rpt.IMNHSTCHMCL_DTCT_RSLT, rpt.EXAM_RSLT, rpt.RPT_DT,
                     rpt.TNM_STG_VRSN, rpt.PTHLG_STG,
                     rcd.PTHLG_RCD_NO as RCD_PTHLG_RCD_NO, rpt.PTHLG_RCD_NO as RPT_PTHLG_RCD_NO,
                     rcd.INVLD_FLG as RCD_INVLD_FLG, rpt.INVLD_FLG as RPT_INVLD_FLG,
                     GROUP_CONCAT(DISTINCT diag.DIAG_DSCPT SEPARATOR '，') as DIAG_DSCPT
-                FROM ODS_FACT_PTHLG_RCD rcd
+                FROM ODS_FACT_PTHLG_RCD rcd 
                 LEFT JOIN ODS_FACT_PTHLG_RPT rpt ON rcd.PTHLG_RCD_NO = rpt.PTHLG_RCD_NO AND rcd.MDC_ORG_CD = rpt.MDC_ORG_CD
                 LEFT JOIN ODS_FACT_INHOS_DIAG_INFMT diag ON rcd.INHOS_NO = diag.INHOS_NO AND rcd.MDC_ORG_CD = diag.MDC_ORG_CD AND diag.INVLD_FLG = 0
                 WHERE rcd.INHOS_NO = '{inhos_no}' AND rcd.MDC_ORG_CD = '{mdc_org_cd}'
-                GROUP BY rcd.INHOS_NO, rcd.PTHLG_RCD_NO, rcd.PTHLG_EXAM_TP_NM, rcd.EXAM_ITM_NM, rcd.BPSY_PRT_NM, rcd.SPCM_CLLT_WAY_NM, rcd.SPCM_CGY_NM, rcd.EXAM_DT,
-                    rpt.PTHLG_DIAG, rpt.EXAM_RPT_RSLT_MICSCPC, rpt.EXAM_RPT_RSLT_MACSCPC,
+                GROUP BY rcd.INHOS_NO, rcd.PTHLG_RCD_NO, rcd.PTHLG_EXAM_TP_NM, rcd.EXAM_ITM_NM, rcd.BPSY_PRT_NM, rcd.SPCM_CLLT_WAY_NM, rcd.SPCM_CGY_NM, rcd.EXAM_DT, 
+                    rpt.PTHLG_DIAG, rpt.EXAM_RPT_RSLT_MICSCPC, rpt.EXAM_RPT_RSLT_MACSCPC, 
                     rpt.IMNHSTCHMCL_DTCT_RSLT, rpt.EXAM_RSLT, rpt.RPT_DT,
                     rpt.TNM_STG_VRSN, rpt.PTHLG_STG,
                     rcd.PTHLG_RCD_NO, rpt.PTHLG_RCD_NO,
                     rcd.INVLD_FLG, rpt.INVLD_FLG;
             """,
         "医嘱": f"""
-                SELECT ODR_NO, ODR_GRP_NO, ODR_OPN_DT_TM, ODR_STRT_DT, ODR_END_DT, ODR_SQNC_NO, INHOS_NO, ODR_ITM_TP_NM,
-                    ODR_ITM_TP_CD, ODR_EXEC_STRT_DT, ODR_EXEC_CPLT_DT, ODR_EXEC_STTS_NM,
-                    ODR_STP_DT_TM, ODR_ITM_CD, ODR_ITM_NM, DRG_SPCF, DRG_USE_ONCE_DOSG,
-                    DRG_USE_ONCE_DOSG_UNT, DRG_USE_TOT_DOSG, DRG_USE_TOT_DOSG_UNT,
+                SELECT ODR_NO, ODR_GRP_NO, ODR_OPN_DT_TM, ODR_STRT_DT, ODR_END_DT, ODR_SQNC_NO, INHOS_NO, ODR_ITM_TP_NM, 
+                    ODR_ITM_TP_CD, ODR_EXEC_STRT_DT, ODR_EXEC_CPLT_DT, ODR_EXEC_STTS_NM, 
+                    ODR_STP_DT_TM, ODR_ITM_CD, ODR_ITM_NM, DRG_SPCF, DRG_USE_ONCE_DOSG, 
+                    DRG_USE_ONCE_DOSG_UNT, DRG_USE_TOT_DOSG, DRG_USE_TOT_DOSG_UNT, 
                     DOS_RUT_NM, DRG_USE_FRQ_NM, INVLD_FLG, MDC_ORG_CD
-                FROM ODS_FACT_INHOS_ODR_INFMT
+                FROM ODS_FACT_INHOS_ODR_INFMT 
                 WHERE INHOS_NO = '{inhos_no}' AND MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "检查": f"""
-                SELECT DISTINCT
+                SELECT DISTINCT 
                     rcd.INHOS_NO as INHOS_NO, rcd.EXAM_RCD_NO as EXAM_RCD_NO, rcd.EXAM_ITM_TP_NM, rcd.EXAM_PRT_NM, rcd.EXAM_ITM_NM,
                     rcd.EXAM_PRCS_DSCPT, rcd.APL_DT_TM, rcd.EXAM_DT,
                     rpt.EXAM_RPT_RSLT_OBJCT, rpt.EXAM_RSLT, rpt.EXAM_RPT_RSLT_SBJCT, rpt.EXAM_RPT_DT,
@@ -241,7 +242,7 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                 WHERE rcd.INHOS_NO = '{inhos_no}' AND rcd.MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "检验": f"""
-                SELECT DISTINCT
+                SELECT DISTINCT 
                     rcd.INHOS_NO as RCD_INHOS_NO, rcd.TEST_RCD_NO, rcd.APL_DT_TM, rcd.TEST_DT, rcd.TEST_RPT_DT,
                     rcd.TEST_ITM_NM as RCD_TEST_ITM_NM, rcd.TEST_ITM_TP_NM, rslt.TEST_RSLT, rslt.TEST_RSLT_VLU,
                     rslt.TEST_RSLT_VLU_UNT, rslt.NML_VLU_MAX, rslt.NML_VLU_MIN, rslt.TEST_ITM_NM as RSLT_TEST_ITM_NM,
@@ -255,7 +256,7 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
             """,
         "诊断": f"""
                 SELECT INHOS_NO, DIAG_ICD10_CD,DIAG_ICD10_NM, DIAG_RCD_NO, DIAG_DT, DIAG_DSCPT, DIAG_CGY_NM, DIAG_CD, INVLD_FLG, MDC_ORG_CD
-                FROM ODS_FACT_INHOS_DIAG_INFMT
+                FROM ODS_FACT_INHOS_DIAG_INFMT 
                 WHERE INHOS_NO = '{inhos_no}' AND MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "入院主要诊断": f"""
@@ -274,16 +275,16 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
             """,
         "诊断信息": f"""
                 SELECT INHOS_NO, DIAG_NM, DIAG_CD, DIAG_SRL_NO, MAIN_DIAG_FLG, MDC_ORG_CD
-                FROM ODS_FACT_MDC_RCD_HMPG_DIAG
+                FROM ODS_FACT_MDC_RCD_HMPG_DIAG 
                 WHERE INHOS_NO = '{inhos_no}' AND MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "病案首页诊断信息": f"""
                 SELECT INHOS_NO, DIAG_CD, DIAG_NM, INHOS_CDT_CD, MAIN_DIAG_FLG, MDC_ORG_CD
-                FROM ODS_FACT_MDC_RCD_HMPG_DIAG
+                FROM ODS_FACT_MDC_RCD_HMPG_DIAG 
                 WHERE INHOS_NO = '{inhos_no}' AND MDC_ORG_CD = '{mdc_org_cd}' AND MAIN_DIAG_FLG = 1;
             """,
         "用药信息": f"""
-                SELECT
+                SELECT 
                     fee.CHRG_ITM_NM,
                     fee.FEE_CGY_NM,
                     fee.CHRG_DT,
@@ -303,20 +304,20 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                   ON drug_dim.DRG_CD = fee.CHRG_ITM_CD
                  AND drug_dim.MDC_ORG_CD = fee.MDC_ORG_CD
                 WHERE fee.INHOS_NO = '{inhos_no}' AND fee.MDC_ORG_CD = '{mdc_org_cd}'
-                    AND fee.FEE_CGY_NM IN ('中成药', '中草药', '西药')
+                    AND fee.FEE_CGY_NM IN ('中成药', '中草药', '西药', '药费', '药品', '药品费', '西药费', '中药费')
                     AND fee.CHRG_RTRN_FLG = 1
                     AND fee.INVLD_FLG = 0
                 ORDER BY fee.CHRG_ITM_NM, fee.CHRG_DT;
             """,
         "手术记录": f"""
                 SELECT
-                    o.INHOS_NO,
+                    o.INHOS_NO, 
                     o.CRT_TM,
-                    o.OPRT_DT_TM,
-                    o.OPRT_STRT_DT_TM,
+                    o.OPRT_DT_TM, 
+                    o.OPRT_STRT_DT_TM, 
                     o.OPRT_END_DT_TM,
-                    o.OPRT_CD,
-                    o.OPRT_NM,
+                    o.OPRT_CD, 
+                    o.OPRT_NM, 
                     o.MAIN_OPRT_FLG,
                     d.POPRT_DIAG_CD AS POPRT_DIAG_CD,
                     d.POPRT_DIAG_NM AS POPRT_DIAG_NM,
@@ -325,17 +326,17 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                     r.OPRT_RCD_DCMT_CTT,
                     o.INTOPRT_TRSFS_ITM,
                     o.TRSFS_VLU,
-                    o.OPRT_PRCS_DSCPT,
+                    o.OPRT_PRCS_DSCPT, 
                     o.HMHG_VLU,
-                    o.OPRT_WAY_DSCPT,
+                    o.OPRT_WAY_DSCPT, 
                     o.ATHS_WAY_NM,
-                    o.OPRT_DCT_NM,
+                    o.OPRT_DCT_NM, 
                     o.ATHS_DCT_NM,
                     o.OPRT_PRT_NM,
                     o.OPRT_INCS_CGY_NM,
-                    o.OPRT_LVL_CD,
+                    o.OPRT_LVL_CD, 
                     o.OPRT_LVL_NM,
-                    o.OPRT_PSTN_CD,
+                    o.OPRT_PSTN_CD, 
                     o.OPRT_PSTN_NM,
                     o.SKIN_DSINFCT_DSCPT,
                     o.INVLD_FLG as O_INVLD_FLG
@@ -378,14 +379,15 @@ def build_module_queries(inhos_no: str, mdc_org_cd: str) -> Dict[str, str]:
                 WHERE INHOS_NO = '{inhos_no}' AND MDC_ORG_CD = '{mdc_org_cd}';
             """,
         "收费": f"""
-                SELECT
-                    fee.INHOS_NO,
-                    fee.CHRG_ITM_NM,
-                    fee.CHRG_ITM_CD,
-                    fee.CHRG_DT,
-                    fee.ITM_QTY,
-                    fee.ITM_UNT_PRICE,
-                    fee.ITM_UNT,
+                SELECT 
+                    fee.INHOS_NO, 
+                    fee.FEE_DTL_NO,
+                    fee.CHRG_ITM_NM, 
+                    fee.CHRG_ITM_CD, 
+                    fee.CHRG_DT, 
+                    fee.ITM_QTY, 
+                    fee.ITM_UNT_PRICE, 
+                    fee.ITM_UNT, 
                     fee.ITM_FEE,
                     fee.FEE_CGY_NM,
                     fee.PRM_KEY,
