@@ -9,9 +9,27 @@ import requests
 from typing import Dict, List, Any, Optional, Union
 import re
 import glob
-from medical_configs import build_converter_config, build_module_queries
-import llm_extractors
-import disease_rules
+try:
+    from .medical_configs import build_converter_config, build_module_queries
+except ImportError:
+    from medical_configs import build_converter_config, build_module_queries
+
+try:
+    from . import llm_extractors
+except ImportError:
+    import llm_extractors
+
+try:
+    from . import disease_rules
+except ImportError:
+    try:
+        import disease_rules
+    except ImportError:
+        class _EmptyDiseaseRules:
+            ICD10_DISEASE_RULES = {}
+            ICD9_DISEASE_RULES = {}
+
+        disease_rules = _EmptyDiseaseRules()
 
 # =========================
 # OceanBase 数据库配置
