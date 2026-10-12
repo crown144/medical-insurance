@@ -39,8 +39,10 @@ export interface TaskListResult {
 
 export interface RuleItem {
   id: number;
-  drug_name: string;
+  drug_name?: string;
+  drugName?: string;
   ruleId: string;
+  displayRuleId?: string;
   description: string;
   type: string;
 }
@@ -80,6 +82,7 @@ export interface CreateTaskParams {
   mdc_org_cd: string;
   rule_ids: number[];
   selectedSchemas: string[];
+  selected_schemas?: string[];
   repeatChargingChildCodes?: string[];
   repeatChargingPairs?: string[];
 }

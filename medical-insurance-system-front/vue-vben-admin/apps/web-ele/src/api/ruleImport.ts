@@ -10,6 +10,7 @@ import type {
 import { baseRequestClient } from '#/api/request';
 
 // ==================== 上传并发起转换 ====================
+const RULE_IMPORT_UPLOAD_TIMEOUT = 300_000;
 
 /** 上传药品/收费目录文件并异步发起规则抽取 */
 export async function uploadRuleImportApi(
@@ -29,7 +30,10 @@ export async function uploadRuleImportApi(
   const response = await baseRequestClient.post<any>(
     '/rule-import/upload/',
     formData,
-    { headers: { 'Content-Type': 'multipart/form-data' } },
+    {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: RULE_IMPORT_UPLOAD_TIMEOUT,
+    },
   );
   return response.data;
 }
@@ -106,6 +110,16 @@ export async function downloadRuleImportResultApi(
 ): Promise<Blob> {
   const response = await baseRequestClient.get<any>(
     `/rule-import/tasks/${taskId}/download/`,
+    { responseType: 'blob' },
+  );
+  return response.data;
+}
+
+// ==================== 下载示例文件 ====================
+
+export async function downloadRuleImportExampleApi(key: string): Promise<Blob> {
+  const response = await baseRequestClient.get<any>(
+    `/rule-import/examples/${key}/download/`,
     { responseType: 'blob' },
   );
   return response.data;

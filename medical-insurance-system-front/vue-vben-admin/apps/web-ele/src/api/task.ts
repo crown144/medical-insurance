@@ -56,7 +56,7 @@ export const searchInhosApi = (params: InhosSearchParams) => {
 };
 
 export const getDemoCaseListApi = async () => {
-  const response = await baseRequestClient.get<DemoCaseItem[]>(Api.Cases);
+  const response = await baseRequestClient.get<{ data: DemoCaseItem[] }>(Api.Cases);
   return response.data || [];
 };
 

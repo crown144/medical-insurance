@@ -5,10 +5,18 @@ import { CopyDocument, RefreshRight } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
 import { generateRuleApi, getRuleList, updateRule } from '#/api/rule';
+import {
+  filterCompileRules,
+  getBilingualRuleName,
+  getBilingualRuleTypeLabel,
+  getDisplayRuleId,
+  getRuleDescriptionEnglish,
+} from '#/config/rule-type';
 
 type RuleListItem = {
   id: number | string;
   ruleId: string;
+  displayRuleId?: string;
   drugName: string;
   type: string;
   description: string;
@@ -63,10 +71,29 @@ const buildCompileInput = (rule: RuleListItem) => {
   );
 };
 
+const getErrorMessage = (error: any, fallback: string) => {
+  const data = error?.response?.data;
+  if (typeof data === 'string') {
+    if (data.includes('504 Gateway Time-out')) {
+      return 'Rule compilation timed out. Please try again later or shorten the rule description.';
+    }
+    return data.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim() || fallback;
+  }
+  return (
+    data?.message ||
+    data?.detail ||
+    data?.error ||
+    data?.result?.error ||
+    error?.message ||
+    fallback
+  );
+};
+
 const normalizeList = (rawList: any[]) => {
   return rawList.map((item) => ({
     id: item.id,
     ruleId: item.ruleId || item.rule_id || `R-${item.id}`,
+    displayRuleId: getDisplayRuleId(item.ruleId || item.rule_id || `R-${item.id}`),
     drugName: item.drugName || item.drug_name || '',
     type: item.type || '',
     description: item.description || '',
@@ -76,17 +103,33 @@ const normalizeList = (rawList: any[]) => {
   })) as RuleListItem[];
 };
 
+const matchesKeyword = (item: RuleListItem, keyword: string) => {
+  if (!keyword) return true;
+  const text = [
+    item.ruleId,
+    item.drugName,
+    item.type,
+    item.description,
+  ].join(' ');
+  return text.toLowerCase().includes(keyword.toLowerCase());
+};
+
 const fetchData = async () => {
   loading.value = true;
   try {
     const res = await getRuleList({
-      page: currentPage.value,
-      page_size: pageSize.value,
-      search: searchForm.keyword.trim() || undefined,
+      compile: true,
+      paginate: false,
+      ordering: 'id',
     });
     const rawList = res?.results || (Array.isArray(res) ? res : []);
-    list.value = normalizeList(rawList);
-    total.value = res?.count || rawList.length || 0;
+    const keyword = searchForm.keyword.trim();
+    const demoList = filterCompileRules(normalizeList(rawList)).filter((item) =>
+      matchesKeyword(item, keyword),
+    );
+    total.value = demoList.length;
+    const start = (currentPage.value - 1) * pageSize.value;
+    list.value = demoList.slice(start, start + pageSize.value);
 
     if (list.value.length === 0) {
       selectedRuleId.value = null;
@@ -95,7 +138,7 @@ const fetchData = async () => {
     }
 
     const stillSelected = list.value.find((item) => item.id === selectedRuleId.value);
-    selectedRuleId.value = stillSelected?.id ?? list.value[0].id;
+    selectedRuleId.value = stillSelected?.id ?? list.value[0]!.id;
     resetCompileState();
   } catch (error) {
     console.error(error);
@@ -145,7 +188,7 @@ const handleCompile = async () => {
     ElMessage.success('Rule compiled successfully');
   } catch (error) {
     console.error(error);
-    ElMessage.error('Rule compilation failed');
+    ElMessage.error(getErrorMessage(error, 'Rule compilation failed'));
   } finally {
     compiling.value = false;
   }
@@ -196,7 +239,7 @@ const handleSave = async () => {
   saving.value = true;
   try {
     await updateRule(selectedRule.value.id, {
-      drugName: selectedRule.value.drugName,
+      drug_name: selectedRule.value.drugName,
       ruleId: selectedRule.value.ruleId,
       type: selectedRule.value.type,
       description: selectedRule.value.description,
@@ -266,16 +309,18 @@ onMounted(fetchData);
             @click="handleSelectRule(item)"
           >
             <div class="rule-item__top">
-              <span class="rule-name">{{ item.drugName || item.ruleId }}</span>
+              <span class="rule-name">
+                {{ getBilingualRuleName(item.drugName) || item.ruleId }}
+              </span>
               <el-tag size="small" :type="item.enabled ? 'success' : 'info'">
                 {{ item.enabled ? 'Enabled' : 'Disabled' }}
               </el-tag>
             </div>
             <div class="rule-item__meta">
-              <span>{{ item.type || '-' }}</span>
+              <span>{{ getBilingualRuleTypeLabel(item.type) }}</span>
               <span>{{ hasCode(item.ruleCode) ? 'Compiled' : 'Not Compiled' }}</span>
             </div>
-            <div class="rule-item__id">{{ item.ruleId }}</div>
+            <div class="rule-item__id">{{ item.displayRuleId || getDisplayRuleId(item.ruleId) }}</div>
           </div>
           <el-empty
             v-if="!loading && list.length === 0"
@@ -318,15 +363,29 @@ onMounted(fetchData);
           <div class="rule-summary">
             <div class="summary-row">
               <span class="label">Rule Name</span>
-              <span>{{ selectedRule.drugName || '-' }}</span>
+              <span>{{ getBilingualRuleName(selectedRule.drugName) }}</span>
             </div>
             <div class="summary-row">
               <span class="label">Rule Type</span>
-              <span>{{ selectedRule.type || '-' }}</span>
+              <span>{{ getBilingualRuleTypeLabel(selectedRule.type) }}</span>
             </div>
             <div class="summary-row summary-row--block">
               <span class="label">Description</span>
-              <div class="description-box">{{ selectedRule.description || '-' }}</div>
+              <div class="description-box">
+                <div>
+                  {{
+                    getRuleDescriptionEnglish(selectedRule.description) ||
+                    selectedRule.description ||
+                    '-'
+                  }}
+                </div>
+                <div
+                  v-if="selectedRule.description && getRuleDescriptionEnglish(selectedRule.description)"
+                  class="description-zh"
+                >
+                  {{ selectedRule.description }}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -542,6 +601,13 @@ onMounted(fetchData);
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   white-space: pre-wrap;
+}
+
+.description-zh {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8a94a6;
 }
 
 .toolbar {

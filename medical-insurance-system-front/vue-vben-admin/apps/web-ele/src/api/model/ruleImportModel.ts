@@ -47,7 +47,9 @@ export interface ExtractedRule {
   seq: number;
   rule_type: string;
   constrained_object: string;
+  constrained_object_en?: string;
   constraint_value: string;
+  constraint_value_en?: string;
   evidence: Record<string, any>;
   source: Record<string, any>;
   is_selected: boolean;

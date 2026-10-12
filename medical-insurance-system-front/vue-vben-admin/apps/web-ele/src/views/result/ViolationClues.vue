@@ -43,7 +43,7 @@ async function loadClues() {
     clues.value = payload.results || [];
     total.value = payload.count || 0;
   } catch (error: any) {
-    ElMessage.error(error?.detail || '获取违规结果线索失败');
+    ElMessage.error(error?.detail || 'Failed to load violation clues');
   } finally {
     loading.value = false;
   }
@@ -82,7 +82,7 @@ function buildRequestBody(selectedClues: Record<string, any>[]) {
 
 function downloadRequestBody(selectedClues: Record<string, any>[]) {
   if (selectedClues.length === 0) {
-    ElMessage.warning('请先勾选需要下载的违规结果线索。');
+    ElMessage.warning('Select violation clues to download first.');
     return;
   }
   const blob = new Blob([JSON.stringify(buildRequestBody(selectedClues), null, 2)], {
@@ -91,7 +91,7 @@ function downloadRequestBody(selectedClues: Record<string, any>[]) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;
-  link.download = `超限定用药上报请求体_${selectedClues.length}条.json`;
+  link.download = `violation_clues_${selectedClues.length}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }
@@ -120,10 +120,10 @@ function printRequestBody(row: Record<string, any>) {
   const clue = clues.value.find((item) => item.externalClueId === row.externalClueId);
   if (!clue) return;
   const requestBody = buildRequestBody([clue]);
-  console.group('三医智慧监管线索请求体（仅打印，未发送）');
+  console.group('Violation clue request body (preview only)');
   console.log(JSON.stringify(requestBody, null, 2));
   console.groupEnd();
-  ElMessage.success('请求体已打印到浏览器开发者工具 Console，未发送任何 POST 请求。');
+  ElMessage.success('Request body printed to the browser console. No POST request was sent.');
 }
 
 onMounted(loadClues);
@@ -135,45 +135,45 @@ onMounted(loadClues);
       <div class="page-title">
         <div class="title-bar"></div>
         <div>
-          <div class="title-main">违规结果线索</div>
-          <div class="title-sub">开发用户专用：结构化线索预览</div>
+          <div class="title-main">Violation Clues</div>
+          <div class="title-sub">Developer access: structured clue preview</div>
         </div>
       </div>
 
       <el-alert
-        title="勾选多条违规线索后，可一次下载符合三医接口格式的请求体 JSON；页面不会发起真实 POST。"
+        title="Select clues to download a JSON request body. This page previews requests without sending them."
         type="info"
         :closable="false"
         class="mb-4"
       />
 
       <el-form :inline="true" :model="form" class="query-card">
-        <el-form-item label="任务 ID">
-          <el-input v-model="form.taskId" clearable placeholder="任务 ID" @keyup.enter="search" />
+        <el-form-item label="Task ID">
+          <el-input v-model="form.taskId" clearable placeholder="Task ID" @keyup.enter="search" />
         </el-form-item>
-        <el-form-item label="住院号">
-          <el-input v-model="form.hospitalizationId" clearable placeholder="住院号" @keyup.enter="search" />
+        <el-form-item label="Admission ID">
+          <el-input v-model="form.hospitalizationId" clearable placeholder="Admission ID" @keyup.enter="search" />
         </el-form-item>
-        <el-form-item label="规则">
+        <el-form-item label="Rule">
           <el-input
             v-model="form.ruleKeyword"
             clearable
-            placeholder="规则编码或名称"
+            placeholder="Rule code or name"
             @keyup.enter="search"
           />
         </el-form-item>
         <el-form-item>
-          <el-button :icon="Search" type="primary" :loading="loading" @click="search">查询</el-button>
-          <el-button :icon="Refresh" @click="reset">重置</el-button>
+          <el-button :icon="Search" type="primary" :loading="loading" @click="search">Search</el-button>
+          <el-button :icon="Refresh" @click="reset">Reset</el-button>
         </el-form-item>
       </el-form>
 
       <div class="batch-actions">
         <el-button :icon="Download" type="success" :disabled="selectedRows.length === 0" @click="downloadSelectedRequestBody">
-          下载已选请求体（{{ selectedRows.length }} 条）
+          Download Selected ({{ selectedRows.length }})
         </el-button>
-        <el-button @click="selectCurrentPage">全选当前页</el-button>
-        <el-button :disabled="selectedRows.length === 0" @click="clearSelection">清空选择</el-button>
+        <el-button @click="selectCurrentPage">Select Page</el-button>
+        <el-button :disabled="selectedRows.length === 0" @click="clearSelection">Clear Selection</el-button>
       </div>
 
       <el-table
@@ -203,10 +203,10 @@ onMounted(loadClues);
         <el-table-column prop="violationItemName" label="violationItemName" min-width="180" show-overflow-tooltip />
         <el-table-column prop="violationItemCode" label="violationItemCode" min-width="180" show-overflow-tooltip />
         <el-table-column prop="cluePrompt" label="cluePrompt" min-width="260" show-overflow-tooltip />
-        <el-table-column label="操作" width="100" fixed="right">
+        <el-table-column label="Actions" width="140" fixed="right">
           <template #default="{ row }">
             <el-button :icon="View" link type="primary" @click="showJson(row)">JSON</el-button>
-            <el-button link type="warning" @click="printRequestBody(row)">打印请求体</el-button>
+            <el-button link type="warning" @click="printRequestBody(row)">Print Request</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -224,7 +224,7 @@ onMounted(loadClues);
       </div>
     </div>
 
-    <el-dialog v-model="dialogVisible" title="结构化违规结果线索 JSON" width="860px">
+    <el-dialog v-model="dialogVisible" title="Structured Violation Clue JSON" width="860px">
       <pre class="json-preview">{{ JSON.stringify(selectedClue, null, 2) }}</pre>
     </el-dialog>
   </div>

@@ -55,6 +55,11 @@ def run_rule_import_task(self, task_id):
         return {"error": "no file"}
 
     params = task.params or {}
+    max_rows_per_table = params.get('max_rows_per_table')
+    if max_rows_per_table in (None, ''):
+        max_rows_per_table = getattr(
+            settings, 'RULE_IMPORT_DEFAULT_MAX_ROWS_PER_TABLE', 80,
+        )
     file_path = task.original_file.path
 
     # 进度回调：解析完成 / 抽取进度
@@ -76,7 +81,7 @@ def run_rule_import_task(self, task_id):
         result = extract_rules_from_file(
             file_path=file_path,
             max_pdf_pages=params.get('max_pdf_pages'),
-            max_rows_per_table=params.get('max_rows_per_table'),
+            max_rows_per_table=max_rows_per_table,
             chunk_size=params.get('chunk_size')
             or getattr(settings, 'RULE_IMPORT_DEFAULT_CHUNK_SIZE', 10),
             max_tables=params.get('max_tables'),
@@ -106,7 +111,10 @@ def run_rule_import_task(self, task_id):
     except SoftTimeLimitExceeded:
         logger.error("[rule_import] 任务 %s 执行超时", task_id)
         _update(task, status=RuleImportTask.Status.FAILED, stage='extract',
-                error_detail="任务执行超时(SoftTimeLimitExceeded)，请减少处理页数/表数后重试",
+                error_detail=(
+                    "任务执行超时，请减少处理页数/表数/每表行数后重试，"
+                    "或调大 RULE_IMPORT_TASK_SOFT_TIME_LIMIT。"
+                ),
                 finished_at=timezone.now())
         return {"error": "timeout"}
 

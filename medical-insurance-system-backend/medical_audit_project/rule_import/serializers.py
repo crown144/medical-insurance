@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import ExtractedRule, RuleImportTask
+from .services.rule_discovery import translate_rule_text
 
 
 class RuleImportTaskSerializer(serializers.ModelSerializer):
@@ -23,13 +24,26 @@ class RuleImportTaskSerializer(serializers.ModelSerializer):
 
 class ExtractedRuleSerializer(serializers.ModelSerializer):
     """抽取规则序列化器。"""
+    constrained_object_en = serializers.SerializerMethodField()
+    constraint_value_en = serializers.SerializerMethodField()
+
     class Meta:
         model = ExtractedRule
         fields = [
             'id', 'import_task', 'seq', 'rule_type',
-            'constrained_object', 'constraint_value', 'evidence', 'source',
+            'constrained_object', 'constrained_object_en',
+            'constraint_value', 'constraint_value_en',
+            'evidence', 'source',
             'is_selected', 'is_imported', 'imported_rule_id', 'created_at',
         ]
+
+    def get_constrained_object_en(self, obj):
+        value = (obj.source or {}).get('constrained_object_en')
+        return value or translate_rule_text(obj.constrained_object)
+
+    def get_constraint_value_en(self, obj):
+        value = (obj.source or {}).get('constraint_value_en')
+        return value or translate_rule_text(obj.constraint_value)
 
 
 class UploadSerializer(serializers.Serializer):

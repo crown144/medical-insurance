@@ -2,7 +2,8 @@ import json
 import logging
 from urllib.parse import quote
 
-from django.http import HttpResponse
+from django.conf import settings
+from django.http import FileResponse, Http404, HttpResponse
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -21,6 +22,13 @@ from .services.importer import import_to_rule_library
 from .tasks import run_rule_import_task
 
 logger = logging.getLogger(__name__)
+
+
+EXAMPLE_FILES = {
+    'duplicate-billing': 'Duplicate billing for medical service items-1-4.pdf',
+    'drug-list': 'National Reimbursement Drug List12.pdf',
+    'over-frequency': 'Over-frequency billing for medical services per cycle.pdf',
+}
 
 
 class StandardPagination(PageNumberPagination):
@@ -77,7 +85,8 @@ class RuleImportUploadView(APIView):
             # 数量类参数不传 = 不限数量(None=全部)；分块行数仅由后端配置决定
             params = {
                 'max_pdf_pages': data.get('max_pdf_pages'),
-                'max_rows_per_table': data.get('max_rows_per_table'),
+                'max_rows_per_table': data.get('max_rows_per_table')
+                or getattr(settings, 'RULE_IMPORT_DEFAULT_MAX_ROWS_PER_TABLE', 80),
                 'chunk_size': getattr(
                     settings, 'RULE_IMPORT_DEFAULT_CHUNK_SIZE', 10),
                 'max_tables': data.get('max_tables'),
@@ -107,6 +116,30 @@ class RuleImportUploadView(APIView):
                 {'error': f'创建任务失败: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class RuleImportExampleDownloadView(APIView):
+    """下载规则导入示例文件。"""
+    permission_classes = [AllowAny]
+
+    def get(self, request, key: str):
+        filename = EXAMPLE_FILES.get(key)
+        if not filename:
+            raise Http404('示例文件不存在')
+
+        example_path = settings.BASE_DIR.parent.parent / filename
+        if not example_path.exists() or not example_path.is_file():
+            logger.warning("[rule_import] 示例文件缺失: %s", example_path)
+            raise Http404('示例文件不存在')
+
+        response = FileResponse(
+            example_path.open('rb'),
+            content_type='application/pdf',
+        )
+        response['Content-Disposition'] = (
+            f"attachment; filename*=utf-8''{quote(filename)}"
+        )
+        return response
 
 
 class RuleImportTaskViewSet(viewsets.ReadOnlyModelViewSet):
@@ -178,10 +211,7 @@ class RuleImportTaskViewSet(viewsets.ReadOnlyModelViewSet):
     def download(self, request, pk=None):
         """下载该任务抽取出的规则 JSON。"""
         task = self.get_object()
-        rules = list(task.rules.values(
-            'seq', 'rule_type', 'constrained_object', 'constraint_value',
-            'evidence', 'source',
-        ))
+        rules = ExtractedRuleSerializer(task.rules.all(), many=True).data
         json_string = json.dumps(rules, ensure_ascii=False, indent=2)
         response = HttpResponse(json_string,
                                 content_type='application/json; charset=utf-8')

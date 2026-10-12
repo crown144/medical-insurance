@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 
 from .views import (
     ConfirmImportView,
+    ExampleFileDownloadView,
     FeiJianImportBatchViewSet,
     FeiJianRawRecordViewSet,
     FeiJianStatsView,
@@ -19,6 +20,11 @@ router.register(r'feijian/raw-records', FeiJianRawRecordViewSet,
 urlpatterns = [
     path('', include(router.urls)),
     path('feijian/upload/', FileUploadView.as_view(), name='feijian-upload'),
+    path(
+        'feijian/examples/inspection-result/download/',
+        ExampleFileDownloadView.as_view(),
+        name='feijian-example-download',
+    ),
     path('feijian/preview/', PreviewImportView.as_view(), name='feijian-preview'),
     path('feijian/confirm-import/', ConfirmImportView.as_view(),
          name='feijian-confirm-import'),

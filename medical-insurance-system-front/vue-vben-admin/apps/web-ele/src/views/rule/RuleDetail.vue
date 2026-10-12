@@ -10,6 +10,7 @@ import {
   Edit,
   Plus,
   Search,
+  View,
   Warning,
 } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -21,7 +22,7 @@ import {
   toggleRuleStatus,
   updateRule,
 } from '#/api/rule';
-import { getRuleTypeLabel, RULE_TYPE_OPTIONS } from '#/config/rule-type';
+import { getDisplayRuleId, getRuleTypeLabel, RULE_TYPE_OPTIONS } from '#/config/rule-type';
 
 type RuleType =
   | '超标准收费'
@@ -57,6 +58,7 @@ interface ConditionNode {
 interface RuleRow {
   id: string | number; // 兼容后端 number ID
   ruleId: string; // ② 规则ID
+  displayRuleId?: string;
   drug_name: string; // ③ 规则名称
   ruleType: RuleType; // ④ 规则类型
   description: string; // ⑤ 原始描述 (对应后端 description)
@@ -158,7 +160,8 @@ const fetchData = async () => {
       // 适配后端数据
       list.value = rawList.map((item: any) => ({
         id: item.id,
-        ruleId: item.ruleId || `R-${item.id}`,
+        ruleId: item.ruleId || item.rule_id || `R-${item.id}`,
+        displayRuleId: getDisplayRuleId(item.ruleId || item.rule_id || `R-${item.id}`),
         drug_name: item.drugName || item.drug_name || extractRuleName(item.description),
         ruleType: item.type as RuleType,
         description: item.description,
@@ -551,7 +554,7 @@ function formatParams(params: any) {
       <el-table-column type="selection" width="44" align="center" />
 
       <!-- ② 规则ID -->
-      <el-table-column prop="ruleId" label="Rule ID" width="120" sortable />
+      <el-table-column prop="displayRuleId" label="Rule ID" width="100" sortable />
 
       <!-- ③ 规则名称 -->
       <el-table-column prop="drug_name" label="Rule Name" min-width="160" />
@@ -746,7 +749,7 @@ function formatParams(params: any) {
         class="detail-table"
       >
         <el-descriptions-item label="Rule ID">
-          {{ currentDetail.ruleId }}
+          {{ currentDetail.displayRuleId || getDisplayRuleId(currentDetail.ruleId) }}
         </el-descriptions-item>
         <el-descriptions-item label="Rule Name">
           {{ currentDetail.drug_name }}

@@ -1,5 +1,7 @@
-from django.db import transaction
 from django.conf import settings
+from django.db import transaction
+from django.http import FileResponse
+from pathlib import Path
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
@@ -22,6 +24,26 @@ from .serializers import (
 )
 from .services.alignment import align_batch_results
 from .services.importer import FeiJianImporter
+
+DEMO_RULE_IDS = [
+    'R-0001',
+    'R-0002',
+    'R-20260704151155530323',
+    'R-20260704151155864177',
+    'R-20260704151200686615',
+    'R-20260704151201033234',
+    'R-20260704151207016105',
+    'R-20260704151207710658',
+    'R-20260709123055310514',
+    'R-20260709124003677192',
+]
+
+
+def get_demo_rule_ids(selected_schemas):
+    qs = Rule.objects.filter(rule_id__in=DEMO_RULE_IDS)
+    if selected_schemas:
+        qs = qs.filter(type__in=selected_schemas)
+    return list(qs.values_list('id', flat=True))
 
 
 class StandardPagination(PageNumberPagination):
@@ -157,8 +179,6 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             'yes',
             'on',
         }
-        result = align_batch_results(batch, task_id=task_id, use_llm=use_llm)
-        total = len(result.get('items', []))
         try:
             page = max(int(payload.get('page', 1)), 1)
         except (TypeError, ValueError):
@@ -169,8 +189,16 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             page_size = 10
         page_size = min(max(page_size, 1), 100)
         start = (page - 1) * page_size
-        end = start + page_size
-        result['items'] = result.get('items', [])[start:end]
+        result = align_batch_results(
+            batch,
+            task_id=task_id,
+            use_llm=use_llm,
+            record_offset=start,
+            record_limit=page_size,
+        )
+        total = result.pop('total_records', None)
+        if total is None:
+            total = len(result.get('items', []))
         result['pagination'] = {
             'page': page,
             'page_size': page_size,
@@ -268,6 +296,28 @@ class FileUploadView(APIView):
                 {'error': f'文件分析失败: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class ExampleFileDownloadView(APIView):
+    """下载飞检导入示例文件。"""
+
+    def get(self, request):
+        file_path = Path(settings.BASE_DIR).parent.parent / 'inspection_result.xlsx'
+        if not file_path.exists():
+            return Response(
+                {'error': '示例文件不存在'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        response = FileResponse(
+            open(file_path, 'rb'),
+            as_attachment=True,
+            filename='inspection_result.xlsx',
+        )
+        response['Content-Type'] = (
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        return response
 
 
 class PreviewImportView(APIView):

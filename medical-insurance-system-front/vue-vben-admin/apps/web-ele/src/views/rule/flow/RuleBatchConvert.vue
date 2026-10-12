@@ -13,6 +13,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   cancelRuleImportApi,
   confirmRuleImportApi,
+  downloadRuleImportExampleApi,
   downloadRuleImportResultApi,
   getExtractedRulesApi,
   getRuleImportTaskApi,
@@ -24,19 +25,92 @@ const ALLOWED_EXTS = ['pdf', 'xlsx', 'xls'];
 const MAX_FILE_SIZE = 50 * 1024 * 1024;
 const TERMINAL: RuleImportStatus[] = ['success', 'failed', 'canceled'];
 
+const STATUS_LABELS: Record<RuleImportStatus, string> = {
+  pending: 'Pending',
+  parsing: 'Parsing',
+  extracting: 'Extracting',
+  success: 'Success',
+  failed: 'Failed',
+  canceled: 'Canceled',
+};
+
 const RULE_TYPE_LABELS: Record<string, string> = {
-  DRUG_RESTRICTION: '超限定用药',
-  FREQUENCY_LIMIT: '超频次收费',
-  DUPLICATE_CHARGE: '重复收费',
-  PRICE_LIMIT: '超标准收费',
-  CONSUMABLE_RESTRICTION: '耗材超限定',
-  OVER_EXAMINATION: '过度医疗',
-  OTHER: '其他',
+  DRUG_RESTRICTION: 'Restricted Medication Use',
+  FREQUENCY_LIMIT: 'Excessive Frequency Billing',
+  DUPLICATE_CHARGE: 'Duplicate Charge',
+  PRICE_LIMIT: 'Over-standard Charge',
+  CONSUMABLE_RESTRICTION: 'Consumable Restriction',
+  OVER_EXAMINATION: 'Overutilization',
+  OTHER: 'Other',
 };
 
 const RULE_TYPE_OPTIONS = Object.entries(RULE_TYPE_LABELS).map(
   ([value, label]) => ({ value, label }),
 );
+
+const TERM_TRANSLATIONS: Record<string, string> = {
+  艾普拉唑: 'Ilaprazole',
+  醋酸钙: 'Calcium acetate tablets',
+  胃肠减压: 'Gastrointestinal decompression',
+  耳部特殊治疗: 'Special ear treatment',
+  静脉注射: 'Intravenous injection',
+  静脉采血: 'Venous blood collection',
+  动脉加压注射: 'Arterial pressure injection',
+  动脉采血: 'Arterial blood collection',
+  机械辅助排痰: 'Mechanical assisted sputum clearance',
+  血气分析: 'Blood gas analysis',
+  '血清碳酸氢盐(HCO3)测定': 'Serum bicarbonate (HCO3) test',
+  尿液分析: 'Urinalysis',
+  尿沉渣白细胞分类: 'Urinary sediment leukocyte classification',
+  尿蛋白定量: 'Urine protein quantification',
+  '急诊监护费': 'Emergency monitoring fee',
+  '急诊诊查费': 'Emergency consultation fee',
+};
+
+const CONSTRAINT_TRANSLATIONS: Record<string, string> = {
+  '使用艾普拉唑须有十二指肠溃疡、反流性食管炎诊断':
+    'Use of ilaprazole requires a diagnosis of duodenal ulcer or reflux esophagitis',
+  '使用醋酸钙须有高磷血症诊断':
+    'Use of calcium acetate tablets requires a diagnosis of hyperphosphatemia',
+  '插胃管加收10元':
+    'An additional 10 yuan may be charged when a gastric tube is inserted',
+  '原价79元，射频、激光、微波加收20元；等离子加收50元；冷冻减收55元':
+    'The base price is 79 yuan; radiofrequency, laser, or microwave treatment may add 20 yuan; plasma treatment may add 50 yuan; cryotherapy should reduce the charge by 55 yuan',
+  '“静脉注射”与“静脉采血”不能同时开':
+    'Intravenous injection and venous blood collection cannot be ordered at the same time',
+  '“动脉加压注射”与“动脉采血”不能同时开':
+    'Arterial pressure injection and arterial blood collection cannot be ordered at the same time',
+  '机械辅助排痰使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日':
+    'The total quantity of mechanical assisted sputum clearance exceeds the allowed limit; the daily limit is 1 day',
+  '使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日':
+    'The total quantity of the service item exceeds the allowed limit; the daily limit is 1 day',
+  '收取“血气分析”费用的同时收取“血清碳酸氢盐(HCO3)测定”费用':
+    'Charging for blood gas analysis together with serum bicarbonate (HCO3) testing',
+  '收取尿液分析费用时，同时收取尿沉渣白细胞分类费用或尿蛋白定量费用':
+    'Charging for urinalysis together with urinary sediment leukocyte classification or urine protein quantification',
+  '单日不得与急诊诊查费同时收费':
+    'May not be charged together with emergency consultation fee on the same day',
+  '急诊监护费单日不得与急诊诊查费同时收费':
+    'Emergency monitoring fee may not be charged together with emergency consultation fee on the same day',
+};
+
+const EXAMPLE_FILES = [
+  {
+    key: 'duplicate-billing',
+    name: 'Duplicate billing for medical service items-1-4.pdf',
+    label: 'Duplicate billing for medical service items',
+  },
+  {
+    key: 'drug-list',
+    name: 'National Reimbursement Drug List12.pdf',
+    label: 'National Reimbursement Drug List',
+  },
+  {
+    key: 'over-frequency',
+    name: 'Over-frequency billing for medical services per cycle.pdf',
+    label: 'Over-frequency billing for medical services per cycle',
+  },
+];
 
 const activeTab = ref<'history' | 'upload'>('upload');
 
@@ -88,8 +162,35 @@ function getStatusType(status: string) {
   return map[status] || 'info';
 }
 
+function getStatusLabel(status: RuleImportStatus | string) {
+  return STATUS_LABELS[status as RuleImportStatus] || status || '-';
+}
+
 function ruleTypeLabel(t: string) {
   return RULE_TYPE_LABELS[t] || t || 'Uncategorized';
+}
+
+function translateExtractedText(value?: string) {
+  const text = (value || '').trim();
+  if (!text) return '-';
+  if (!/[\u4E00-\u9FFF]/.test(text)) return text;
+  if (CONSTRAINT_TRANSLATIONS[text]) return CONSTRAINT_TRANSLATIONS[text];
+  if (TERM_TRANSLATIONS[text]) return TERM_TRANSLATIONS[text];
+  let translated = text;
+  Object.entries(TERM_TRANSLATIONS)
+    .sort(([left], [right]) => right.length - left.length)
+    .forEach(([cn, en]) => {
+      translated = translated.split(cn).join(en);
+    });
+  return translated === text ? text : translated;
+}
+
+function targetObjectText(row: ExtractedRule) {
+  return row.constrained_object_en || translateExtractedText(row.constrained_object);
+}
+
+function constraintText(row: ExtractedRule) {
+  return row.constraint_value_en || translateExtractedText(row.constraint_value);
 }
 
 function isRunning(task: null | RuleImportTask) {
@@ -116,7 +217,7 @@ async function pollOnce() {
         rulesPage.value = 1;
         await loadRules();
       } else if (task.status === 'failed') {
-        ElMessage.error('Conversion failed. Please review the error details.');
+        ElMessage.error(task.error_detail || 'Conversion failed. Please review the error details.');
       }
       await loadHistory();
     }
@@ -165,19 +266,19 @@ function validateForm(): boolean {
   }
   if (form.max_pdf_pages != null && form.max_pdf_pages < 1) {
     ElMessage.warning(
-      'Maximum PDF pages must be greater than 0, or left blank for no limit.',
+      'Maximum PDF pages must be greater than 0, or left blank for the backend default.',
     );
     return false;
   }
   if (form.max_rows_per_table != null && form.max_rows_per_table < 1) {
     ElMessage.warning(
-      'Maximum rows per table must be greater than 0, or left blank for no limit.',
+      'Maximum rows per table must be greater than 0, or left blank for the backend default.',
     );
     return false;
   }
   if (form.max_tables != null && form.max_tables < 1) {
     ElMessage.warning(
-      'Maximum number of tables must be greater than 0, or left blank for no limit.',
+      'Maximum number of tables must be greater than 0, or left blank for the backend default.',
     );
     return false;
   }
@@ -284,16 +385,35 @@ async function handleConfirmImport(selectAll: boolean) {
 async function handleDownload(taskId: number) {
   try {
     const blob = await downloadRuleImportResultApi(taskId);
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `rule-extraction-task-${taskId}.json`;
-    document.body.append(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
+    saveBlob(blob, `rule-extraction-task-${taskId}.json`);
   } catch (error: any) {
     const msg = error?.response?.data?.error || error?.message || 'Download failed';
+    ElMessage.error(msg);
+  }
+}
+
+function saveBlob(blob: Blob, filename: string) {
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.append(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
+
+async function handleDownloadExample(key: string) {
+  const item = EXAMPLE_FILES.find((file) => file.key === key);
+  if (!item) return;
+  try {
+    const blob = await downloadRuleImportExampleApi(key);
+    saveBlob(blob, item.name);
+  } catch (error: any) {
+    const msg =
+      error?.response?.data?.error ||
+      error?.message ||
+      'Example file download failed';
     ElMessage.error(msg);
   }
 }
@@ -378,7 +498,7 @@ onUnmounted(() => {
     <div class="content-card">
       <div class="page-title">
         <div class="title-bar"></div>
-        <div>
+        <div class="title-copy">
           <div class="title-main">Rule Discovery</div>
           <div class="title-sub">
             Upload drug or billing catalog files (PDF or Excel). The system
@@ -386,6 +506,22 @@ onUnmounted(() => {
             into the rule library.
           </div>
         </div>
+        <el-dropdown trigger="click" @command="handleDownloadExample">
+          <el-button :icon="Download">
+            Example File Download
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item
+                v-for="file in EXAMPLE_FILES"
+                :key="file.key"
+                :command="file.key"
+              >
+                {{ file.label }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
       </div>
 
       <el-tabs v-model="activeTab" type="border-card" class="main-tabs">
@@ -422,7 +558,7 @@ onUnmounted(() => {
                   <el-input-number
                     v-model="form.max_pdf_pages"
                     :min="1"
-                    placeholder="Blank = no limit"
+                    placeholder="Blank = backend default"
                     controls-position="right"
                     style="width: 100%"
                   />
@@ -431,7 +567,7 @@ onUnmounted(() => {
                   <el-input-number
                     v-model="form.max_rows_per_table"
                     :min="1"
-                    placeholder="Blank = no limit"
+                    placeholder="Blank = backend default"
                     controls-position="right"
                     style="width: 100%"
                   />
@@ -440,7 +576,7 @@ onUnmounted(() => {
                   <el-input-number
                     v-model="form.max_tables"
                     :min="1"
-                    placeholder="Blank = no limit"
+                    placeholder="Blank = backend default"
                     controls-position="right"
                     style="width: 100%"
                   />
@@ -465,7 +601,7 @@ onUnmounted(() => {
             <div class="status-row">
               <span class="status-name">{{ currentTask.task_name }}</span>
               <el-tag :type="getStatusType(currentTask.status)" size="small">
-                {{ currentTask.status_label }}
+                {{ getStatusLabel(currentTask.status) }}
               </el-tag>
               <span v-if="polling" class="muted">(running, auto-refreshing...)</span>
             </div>
@@ -566,17 +702,23 @@ onUnmounted(() => {
                   </template>
                 </el-table-column>
                 <el-table-column
-                  prop="constrained_object"
                   label="Target Object"
                   min-width="160"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ targetObjectText(row) }}
+                  </template>
+                </el-table-column>
                 <el-table-column
-                  prop="constraint_value"
                   label="Constraint"
                   min-width="260"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ constraintText(row) }}
+                  </template>
+                </el-table-column>
                 <el-table-column label="Source" width="160" show-overflow-tooltip>
                   <template #default="{ row }">
                     {{ row.source?.file_name || '-' }}
@@ -654,7 +796,7 @@ onUnmounted(() => {
               <el-table-column label="Status" width="100" align="center">
                 <template #default="{ row }">
                   <el-tag :type="getStatusType(row.status)" size="small">
-                    {{ row.status_label }}
+                    {{ getStatusLabel(row.status) }}
                   </el-tag>
                 </template>
               </el-table-column>
@@ -757,6 +899,10 @@ onUnmounted(() => {
   margin-top: 3px;
   background: #409eff;
   border-radius: 3px;
+}
+.title-copy {
+  flex: 1;
+  min-width: 0;
 }
 .title-main {
   font-size: 18px;

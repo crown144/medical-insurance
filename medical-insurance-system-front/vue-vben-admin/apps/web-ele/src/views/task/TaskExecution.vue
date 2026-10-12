@@ -41,6 +41,14 @@ const searchForm = ref({
   status: '' as '' | TaskStatus,
 });
 
+const DEMO_DEFAULT_SCHEMAS = [
+  '超限定用药',
+  '超标准收费',
+  '重复收费',
+  '超频次收费',
+  '过度医疗',
+];
+
 const allTasks = ref<TaskItemDisplay[]>([]);
 const totalTasks = ref(0);
 const pageSize = ref(10);
@@ -99,6 +107,19 @@ function formatSchemas(schemas?: string[]) {
   return (schemas || []).map((schema) => getRuleTypeLabel(schema));
 }
 
+function getTaskSchemas(task: any) {
+  const schemas = task.selectedSchemas || task.selected_schemas || [];
+  if (schemas.length) return schemas;
+
+  const inferred: string[] = [];
+  for (const rule of task.rules || []) {
+    if (rule.type && !inferred.includes(rule.type)) {
+      inferred.push(rule.type);
+    }
+  }
+  return inferred.length ? inferred : DEMO_DEFAULT_SCHEMAS;
+}
+
 // --- API Interactions ---
 
 // Load Tasks
@@ -119,7 +140,7 @@ const loadTasks = async () => {
     allTasks.value = res.results.map((task) => ({
       ...task,
       taskName: task.name,
-      selectedSchemas: task.selectedSchemas || [],
+      selectedSchemas: getTaskSchemas(task),
       progress: calcProgress(task.status),
     }));
     totalTasks.value = res.count;
@@ -154,6 +175,11 @@ const stopPolling = () => {
 const handleSearch = () => {
   currentPage.value = 1;
   loadTasks();
+};
+
+const resetSearch = () => {
+  searchForm.value = { id: '', search: '', status: '' };
+  handleSearch();
 };
 
 // src/views/task/TaskExecution.vue

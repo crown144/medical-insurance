@@ -8,7 +8,11 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import { baseRequestClient } from '../../api/request';
 import { getTaskResultListApi } from '../../api/result';
 import { executeTaskApi } from '../../api/task';
-import { getRuleTypeLabel } from '../../config/rule-type';
+import {
+  getRuleNameEnglish,
+  getRuleTypeLabel,
+  getViolationReasonEnglish,
+} from '../../config/rule-type';
 
 const route = useRoute();
 const router = useRouter();
@@ -101,12 +105,12 @@ const fetchTableData = async () => {
         id: item.id,
         hosNo: item.hospitalization_id,
         // 违规项目
-        itemName: finalItemName,
+        itemName: getRuleNameEnglish(finalItemName) || finalItemName,
         // 违规类型
         violationTypeRaw: item.rule?.type || item.rule?.description || 'General Rule',
         violationType: getRuleTypeLabel(item.rule?.type || item.rule?.description) || 'General Rule',
         // 违规原因
-        reason: item.reason,
+        reason: getViolationReasonEnglish(item.reason) || item.reason,
         // 时间
         time: item.created_at
           ? new Date(item.created_at).toLocaleString()

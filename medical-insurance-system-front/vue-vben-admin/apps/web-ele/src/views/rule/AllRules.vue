@@ -11,7 +11,14 @@ import {
   toggleRuleStatus,
   updateRule,
 } from '#/api/rule';
-import { getRuleTypeLabel, RULE_TYPE_OPTIONS } from '#/config/rule-type';
+import {
+  filterDemoRules,
+  getBilingualRuleName,
+  getBilingualRuleTypeLabel,
+  getDisplayRuleId,
+  getRuleDescriptionEnglish,
+  RULE_TYPE_OPTIONS,
+} from '#/config/rule-type';
 
 const router = useRouter();
 
@@ -42,6 +49,10 @@ const form = reactive({
 });
 
 const typeOptions = RULE_TYPE_OPTIONS;
+const displayTypeOptions = RULE_TYPE_OPTIONS.map((item) => ({
+  ...item,
+  label: getBilingualRuleTypeLabel(item.value),
+}));
 const statusOptions = [
   { label: 'Enabled', value: 'true' },
   { label: 'Disabled', value: 'false' },
@@ -69,33 +80,51 @@ const formatDate = (value?: string) => {
     : date.toLocaleString('zh-CN', { hour12: false });
 };
 
+const normalizeRule = (item: any) => {
+  const ruleCode = item.rule_code || item.ruleCode || '';
+  return {
+    ...item,
+    ruleId: item.ruleId || item.rule_id || `R-${item.id}`,
+    displayRuleId: getDisplayRuleId(item.ruleId || item.rule_id || `R-${item.id}`),
+    drugName: item.drugName || item.drug_name || '-',
+    createdAt: item.created_at || '',
+    updatedAt: item.updated_at || '',
+    ruleCode,
+    rule_code: ruleCode,
+    enabled: normalizeEnabledState(Boolean(item.enabled), ruleCode),
+  };
+};
+
+const applyLocalFilters = (items: any[]) => {
+  const keyword = searchForm.keyword.trim().toLowerCase();
+  return items.filter((item) => {
+    if (searchForm.type && item.type !== searchForm.type) return false;
+    if (searchForm.status && item.enabled !== (searchForm.status === 'true')) {
+      return false;
+    }
+    if (!keyword) return true;
+    const text = [
+      item.ruleId,
+      item.drugName,
+      item.type,
+      item.description,
+    ].join(' ');
+    return text.toLowerCase().includes(keyword);
+  });
+};
+
 const fetchData = async () => {
   loading.value = true;
   try {
-    const params: Record<string, any> = {
-      page: currentPage.value,
-      page_size: pageSize.value,
-    };
-    if (searchForm.keyword.trim()) params.search = searchForm.keyword.trim();
-    if (searchForm.type) params.type = searchForm.type;
-    if (searchForm.status) params.status = searchForm.status === 'true';
-
-    const res = await getRuleList(params);
+    const res = await getRuleList({
+      paginate: false,
+      ordering: 'id',
+    });
     const rawList = res?.results || (Array.isArray(res) ? res : []);
-    list.value = rawList.map((item: any) => ({
-      ...item,
-      ruleId: item.ruleId || item.rule_id || `R-${item.id}`,
-      drugName: item.drugName || item.drug_name || '-',
-      createdAt: item.created_at || '',
-      updatedAt: item.updated_at || '',
-      ruleCode: item.rule_code || item.ruleCode || '',
-      rule_code: item.rule_code || item.ruleCode || '',
-      enabled: normalizeEnabledState(
-        Boolean(item.enabled),
-        item.rule_code || item.ruleCode || '',
-      ),
-    }));
-    total.value = res?.count || rawList.length || 0;
+    const demoList = applyLocalFilters(filterDemoRules(rawList.map(normalizeRule)));
+    total.value = demoList.length;
+    const start = (currentPage.value - 1) * pageSize.value;
+    list.value = demoList.slice(start, start + pageSize.value);
   } catch (error) {
     console.error(error);
     ElMessage.error('Failed to load all rules.');
@@ -259,7 +288,7 @@ onMounted(fetchData);
           placeholder="Rule Type"
         >
           <el-option
-            v-for="item in typeOptions"
+            v-for="item in displayTypeOptions"
             :key="item.value"
             :label="item.label"
             :value="item.value"
@@ -294,15 +323,15 @@ onMounted(fetchData);
       <el-table-column prop="drugName" label="Rule Name" min-width="180">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">
-            {{ row.drugName }}
+            {{ getBilingualRuleName(row.drugName) }}
           </el-button>
         </template>
       </el-table-column>
-      <el-table-column prop="ruleId" label="Rule ID" width="160" />
+      <el-table-column prop="displayRuleId" label="Rule ID" width="100" />
       <el-table-column prop="type" label="Rule Type" width="160" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="goToTypeRule(row.type)">
-            {{ getRuleTypeLabel(row.type) }}
+            {{ getBilingualRuleTypeLabel(row.type) }}
           </el-button>
         </template>
       </el-table-column>
@@ -340,12 +369,19 @@ onMounted(fetchData);
           {{ formatDate(row.createdAt) }}
         </template>
       </el-table-column>
-      <el-table-column
-        prop="description"
-        label="Description"
-        min-width="280"
-        show-overflow-tooltip
-      />
+      <el-table-column label="Description" min-width="280" show-overflow-tooltip>
+        <template #default="{ row }">
+          <el-tooltip
+            :content="row.description"
+            :disabled="!row.description || !getRuleDescriptionEnglish(row.description)"
+            placement="top"
+          >
+            <span>
+              {{ getRuleDescriptionEnglish(row.description) || row.description || '-' }}
+            </span>
+          </el-tooltip>
+        </template>
+      </el-table-column>
       <el-table-column label="Actions" width="220" fixed="right" align="center">
         <template #default="{ row }">
           <div class="op-links">
@@ -391,13 +427,13 @@ onMounted(fetchData);
         class="detail-table"
       >
         <el-descriptions-item label="Rule ID">
-          {{ currentDetail.ruleId }}
+          {{ currentDetail.displayRuleId || getDisplayRuleId(currentDetail.ruleId) }}
         </el-descriptions-item>
         <el-descriptions-item label="Rule Name">
-          {{ currentDetail.drugName }}
+          {{ getBilingualRuleName(currentDetail.drugName) }}
         </el-descriptions-item>
         <el-descriptions-item label="Rule Type">
-          {{ getRuleTypeLabel(currentDetail.type) }}
+          {{ getBilingualRuleTypeLabel(currentDetail.type) }}
         </el-descriptions-item>
         <el-descriptions-item label="Status">
           <el-tag :type="currentDetail.enabled ? 'success' : 'danger'">
@@ -411,7 +447,19 @@ onMounted(fetchData);
           {{ formatDate(currentDetail.updatedAt) }}
         </el-descriptions-item>
         <el-descriptions-item label="Description" :span="2">
-          {{ currentDetail.description || '-' }}
+          <div>
+            {{
+              getRuleDescriptionEnglish(currentDetail.description) ||
+              currentDetail.description ||
+              '-'
+            }}
+          </div>
+          <div
+            v-if="currentDetail.description && getRuleDescriptionEnglish(currentDetail.description)"
+            class="description-zh"
+          >
+            {{ currentDetail.description }}
+          </div>
         </el-descriptions-item>
         <el-descriptions-item label="Execution Code" :span="2">
           <div class="code-scroll-box">
@@ -435,7 +483,7 @@ onMounted(fetchData);
         <el-form-item label="Rule Type">
           <el-select v-model="form.type" style="width: 220px">
             <el-option
-              v-for="item in typeOptions"
+              v-for="item in displayTypeOptions"
               :key="item.value"
               :label="item.label"
               :value="item.value"
@@ -572,6 +620,13 @@ onMounted(fetchData);
 
 .detail-table :deep(.el-descriptions__content) {
   color: #303133;
+}
+
+.description-zh {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8a94a6;
 }
 
 .code-scroll-box {

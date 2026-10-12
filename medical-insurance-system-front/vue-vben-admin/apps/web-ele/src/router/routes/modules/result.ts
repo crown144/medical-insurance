@@ -40,7 +40,7 @@ const result: RouteRecordRaw = {
       name: 'ResultViolationClues',
       component: () => import('#/views/result/ViolationClues.vue'),
       meta: {
-        title: '违规结果线索',
+        title: 'Violation Clues',
         icon: 'mdi:table-eye',
         authority: ['developer'],
       },

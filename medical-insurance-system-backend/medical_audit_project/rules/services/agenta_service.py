@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse
 
+import httpx
 from django.conf import settings
 from openai import OpenAI
 
@@ -42,7 +43,7 @@ class AgentAService:
             'model': getattr(
                 settings,
                 'RULE_COMPILE_LLM_MODEL',
-                'qwen3.5-35b-a3b',
+                'qwen3.5-flash',
             ),
             'api_key': getattr(settings, 'RULE_COMPILE_LLM_API_KEY', '') or '',
             'max_tokens': int(
@@ -50,6 +51,9 @@ class AgentAService:
             ),
             'timeout': int(
                 getattr(settings, 'RULE_COMPILE_LLM_TIMEOUT', 120),
+            ),
+            'trust_env': bool(
+                getattr(settings, 'RULE_COMPILE_LLM_TRUST_ENV', False),
             ),
         }
 
@@ -71,10 +75,17 @@ class AgentAService:
         api_key = config['api_key']
         if not api_key:
             raise ValueError('未配置 RULE_COMPILE_LLM_API_KEY，请先在 settings 或环境变量中配置规则编译模型 API Key')
+        # httpx/OpenAI 默认会读取 HTTP(S)_PROXY。生产机常遗留指向本机代理的
+        # 环境变量，Web 请求正常但调用模型时会因此失败；默认绕开这些变量。
+        http_client = httpx.Client(
+            timeout=config['timeout'],
+            trust_env=config['trust_env'],
+        )
         client = OpenAI(
             api_key=api_key,
             base_url=config['base_url'],
             timeout=config['timeout'],
+            http_client=http_client,
         )
         return client, config['model']
 
@@ -207,6 +218,7 @@ class AgentAService:
             ],
             temperature=0,
             max_tokens=cls._llm_config()['max_tokens'],
+            extra_body={'enable_thinking': False},
         )
 
         choice = response.choices[0]

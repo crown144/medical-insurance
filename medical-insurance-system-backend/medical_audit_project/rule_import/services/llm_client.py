@@ -17,13 +17,14 @@ from django.conf import settings
 
 logger = logging.getLogger(__name__)
 
-_SYSTEM_PROMPT = "你是一个严谨的医保规则解析助手。"
+_SYSTEM_PROMPT = "你是一个严谨的医保规则解析助手。/no_think"
 
 
 def _get_client():
     """构造 OpenAI 客户端（惰性导入 openai）。"""
     try:
         from openai import OpenAI
+        import httpx
     except ImportError as exc:  # pragma: no cover - 依赖缺失时的清晰报错
         raise RuntimeError(
             "未安装 openai 依赖，无法调用 LLM。请先 pip install openai。"
@@ -39,15 +40,21 @@ def _get_client():
         )
 
     timeout = getattr(settings, 'RULE_IMPORT_LLM_TIMEOUT', 60)
-    return OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
+    trust_env = getattr(settings, 'RULE_IMPORT_LLM_TRUST_ENV', False)
+    return OpenAI(
+        api_key=api_key,
+        base_url=base_url,
+        http_client=httpx.Client(timeout=timeout, trust_env=trust_env),
+        timeout=timeout,
+    )
 
 
 def get_header_model() -> str:
-    return getattr(settings, 'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen')
+    return getattr(settings, 'RULE_IMPORT_LLM_MODEL_HEADER', 'qwen3.5-flash')
 
 
 def get_extract_model() -> str:
-    return getattr(settings, 'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen')
+    return getattr(settings, 'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen3.5-flash')
 
 
 def call_llm(prompt: str, model: str = None, temperature: float = 0) -> str:
@@ -70,9 +77,10 @@ def call_llm(prompt: str, model: str = None, temperature: float = 0) -> str:
                 model=model,
                 messages=[
                     {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
+                    {"role": "user", "content": f"{prompt}\n/no_think"},
                 ],
                 temperature=temperature,
+                extra_body={'enable_thinking': False},
             )
             content = response.choices[0].message.content
             return content.strip() if content else ""

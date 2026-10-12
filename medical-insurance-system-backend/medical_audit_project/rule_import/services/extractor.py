@@ -12,6 +12,8 @@ import logging
 import os
 import re
 
+from django.conf import settings
+
 from .llm_client import call_llm, get_header_model
 
 logger = logging.getLogger(__name__)
@@ -172,11 +174,16 @@ def extract_pdf_tables(file_path, max_pages=None):
                 is_header = True
                 if results:
                     try:
-                        if rule_is_header(candidate_headers):
+                        use_llm_header_detection = getattr(
+                            settings,
+                            'RULE_IMPORT_USE_LLM_HEADER_DETECTION',
+                            False,
+                        )
+                        if use_llm_header_detection and rule_is_header(candidate_headers):
                             is_header = llm_is_header(candidate_headers,
                                                       candidate_rows[:2])
                         else:
-                            is_header = False
+                            is_header = rule_is_header(candidate_headers)
                     except Exception as e:  # noqa: BLE001
                         logger.warning("LLM 判断表头失败，按非表头处理: %s", e)
                         is_header = False

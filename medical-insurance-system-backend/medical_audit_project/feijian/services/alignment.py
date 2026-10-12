@@ -26,16 +26,27 @@ CATEGORY_ALIASES = {
         '超限定用药', '超限用药', '超医保限定', '限定支付范围',
         '适应症不符', '超适应症', '超范围用药', '用药限制',
         '限定用药', '限适应症', '限制用药',
+        'restricted medication use', 'restricted medication',
+        'indication mismatch', 'drug indication mismatch',
+        'drug indication', 'limited indication', 'indication restriction',
+        'requires hyperphosphatemia', 'requires duodenal ulcer',
+        'reflux esophagitis', 'calcium acetate', 'ilaprazole',
     ],
     '超标准收费': [
         '超标准收费', '超标收费', '超价格收费', '收费超标',
         '床位费超标', '护理费超标', '超过收费标准',
+        'over-standard charge', 'over standard charge', 'overcharge',
+        'charge exceeds standard', 'price exceeds standard',
     ],
     '重复收费': [
         '重复收费', '重复计费', '重复收取', '重复项目', '重复结算',
+        'duplicate charge', 'duplicate billing', 'duplicate item',
+        'repeated billing', 'repeated charge',
     ],
     '过度检查': [
         '过度检查', '无指征检查', '过度诊疗', '过度检验', '检查过度',
+        'overutilization', 'over examination', 'excessive examination',
+        'unnecessary examination', 'over testing',
     ],
     '串换项目': [
         '串换项目', '串换药品', '串换诊疗项目', '项目串换',
@@ -51,6 +62,22 @@ CATEGORY_BY_KEYWORD = {
     for canonical, aliases in CATEGORY_ALIASES.items()
     for alias in aliases
 }
+
+CROSS_LANGUAGE_TERMS = [
+    ('calcium acetate', '醋酸钙'),
+    ('calcium acetate tablets', '醋酸钙'),
+    ('hyperphosphatemia', '高磷血症'),
+    ('ilaprazole', '艾普拉唑'),
+    ('duodenal ulcer', '十二指肠溃疡'),
+    ('reflux esophagitis', '反流性食管炎'),
+    ('intravenous injection', '静脉注射'),
+    ('venous blood collection', '静脉采血'),
+    ('arterial pressure injection', '动脉加压注射'),
+    ('arterial blood collection', '动脉采血'),
+    ('gastrointestinal decompression', '胃肠减压'),
+    ('special ear treatment', '耳部特殊治疗'),
+    ('mechanical assisted sputum clearance', '机械辅助排痰'),
+]
 
 MATCHED = 'matched'
 PARTIAL = 'partial'
@@ -70,13 +97,18 @@ def align_batch_results(
     batch: FeiJianImportBatch,
     task_id: Optional[int] = None,
     use_llm: bool = False,
+    record_offset: Optional[int] = None,
+    record_limit: Optional[int] = None,
 ) -> Dict[str, Any]:
     if task_id is None:
         task_id = _infer_task_id(batch)
 
-    feijian_records = list(
-        batch.records.exclude(hospitalization_no='').order_by('row_index', 'id'),
-    )
+    record_qs = batch.records.exclude(hospitalization_no='').order_by('row_index', 'id')
+    total_records = record_qs.count()
+    if record_offset is not None and record_limit is not None:
+        record_qs = record_qs[record_offset:record_offset + record_limit]
+
+    feijian_records = list(record_qs)
     if not feijian_records:
         return _empty_response(batch, task_id, '当前导入批次没有可对齐的住院号')
 
@@ -127,6 +159,7 @@ def align_batch_results(
         'llm_enabled': llm_enabled,
         'summary': summary,
         'items': alignments,
+        'total_records': total_records,
     }
 
 
@@ -212,6 +245,10 @@ def _score_pair(record: FeiJianRawRecord, result: Result) -> Tuple[float, List[s
     if text_score >= 0.35:
         reasons.append('问题描述文本相似')
 
+    if _has_cross_language_term_match(feijian_text, system_text):
+        score += 0.12
+        reasons.append('关键药品/项目中英文一致')
+
     amount_score = amount_similarity(record.involved_amount, _extract_amount(system_text))
     if amount_score is not None:
         score += amount_score * 0.05
@@ -276,12 +313,13 @@ def _llm_score_pair(
             messages=[
                 {
                     'role': 'system',
-                    'content': '你只输出严格 JSON。score 必须是 0 到 1 的数字。',
+                    'content': '你只输出严格 JSON。score 必须是 0 到 1 的数字。/no_think',
                 },
-                {'role': 'user', 'content': prompt},
+                {'role': 'user', 'content': f'{prompt}\n/no_think'},
             ],
             temperature=0,
             max_tokens=int(os.environ.get('FEIJIAN_ALIGNMENT_MAX_TOKENS') or 300),
+            extra_body={'enable_thinking': False},
         )
         raw = response.choices[0].message.content or ''
         data = _parse_llm_json(raw)
@@ -335,6 +373,22 @@ def normalize_text(value: Any) -> str:
     text = re.sub(r'\s+', '', text)
     text = re.sub(r'[，。、“”‘’：:；;（）()\[\]{}【】\-_/\\|,.\s]+', '', text)
     return text
+
+
+def _has_cross_language_term_match(left: Any, right: Any) -> bool:
+    left_text = normalize_text(left)
+    right_text = normalize_text(right)
+    if not left_text or not right_text:
+        return False
+    for english, chinese in CROSS_LANGUAGE_TERMS:
+        english_text = normalize_text(english)
+        chinese_text = normalize_text(chinese)
+        if (
+            (english_text in left_text and chinese_text in right_text)
+            or (chinese_text in left_text and english_text in right_text)
+        ):
+            return True
+    return False
 
 
 def text_similarity(left: Any, right: Any) -> float:
@@ -519,10 +573,77 @@ def _empty_response(
     }
 
 
+def _translate_reason(text: str) -> str:
+    """Translate known Chinese reason patterns to English."""
+    if not text:
+        return text
+
+    term_translations = {
+        '艾普拉唑': 'ilaprazole',
+        '醋酸钙': 'calcium acetate tablets',
+        '静脉注射': 'intravenous injection',
+        '静脉采血': 'venous blood collection',
+        '动脉加压注射': 'arterial pressure injection',
+        '动脉采血': 'arterial blood collection',
+        '机械辅助排痰': 'mechanical assisted sputum clearance',
+        '胃肠减压': 'gastrointestinal decompression',
+        '急诊监护费': 'emergency monitoring fee',
+        '急诊诊查费': 'emergency consultation fee',
+    }
+    translations = {
+        '规则校验通过，未发现异常。': 'Rule check passed, no anomalies found.',
+        '发现拦截条件：诊断命中且存在新发/急性证据。': 'Interception: diagnosis matches with new/acute evidence.',
+        '未发现拦截条件。': 'No interception condition found.',
+        '适应症不符：艾普拉唑限十二指肠溃疡或反流性食管炎，未发现相关诊断或病史支持':
+            'Indication mismatch: ilaprazole is limited to duodenal ulcer or reflux esophagitis, and no supporting diagnosis or medical history was found.',
+        '适应症不符：醋酸钙限高磷血症患者使用，未发现相关诊断或病史支持':
+            'Indication mismatch: calcium acetate tablets are limited to patients with hyperphosphatemia, and no supporting diagnosis or medical history was found.',
+        '“静脉注射”与“静脉采血”不能同时开':
+            'Intravenous injection and venous blood collection cannot be ordered at the same time.',
+        '“动脉加压注射”与“动脉采血”不能同时开':
+            'Arterial pressure injection and arterial blood collection cannot be ordered at the same time.',
+        '单日不得与急诊诊查费同时收费':
+            'May not be charged together with emergency consultation fee on the same day.',
+    }
+    if text in translations:
+        return translations[text]
+
+    m = re.match(r'^(.+?)与(.+?)在同一秒内同时开具，冲突时间点[:：](.+)$', text)
+    if m:
+        first = term_translations.get(m.group(1).strip(), m.group(1).strip())
+        second = term_translations.get(m.group(2).strip(), m.group(2).strip())
+        details = m.group(3)
+        for cn, en in term_translations.items():
+            details = details.replace(cn, en)
+        details = details.replace('；', '; ').replace('，', ', ').replace('项', ' item(s)')
+        return f'{first} and {second} were ordered in the same second. Conflict time point(s): {details}'
+
+    m = re.match(r'^(.+?)项目单日上限为(.+?)，发现超限记录[:：](.+?)(。|$)', text)
+    if m:
+        item = term_translations.get(m.group(1).strip(), m.group(1).strip())
+        return f'{item} exceeds the daily limit of {m.group(2)}.'
+
+    # 收费项目"xxx"(代码:xxx)在xxx存在组套重复收费，涉及xxx，总金额:xxx元
+    m = re.match(r'收费项目"(.+?)"\(代码:(.+?)\)在(.+?)存在组套重复收费，涉及(.+?)，总金额:(.+?)元', text)
+    if m:
+        return f'Charge item "{m.group(1)}" (code: {m.group(2)}) has package duplicate charge at {m.group(3)}, involving {m.group(4)}, total: {m.group(5)} yuan'
+    # 收费项目"xxx"(代码:xxx)在N个组套中重复收费：xxx
+    m = re.match(r'收费项目"(.+?)"\(代码:(.+?)\)在(.+?)个组套中重复收费：(.+)', text)
+    if m:
+        return f'Charge item "{m.group(1)}" (code: {m.group(2)}) has duplicate charges in {m.group(3)} packages: {m.group(4)}'
+    # 父项目'xxx'(代码:xxx)与子项目'xxx'(代码:xxx)在xxx同时收费...
+    m = re.match(r"父项目'(.+?)'\(代码:(.+?)\)与子项目'(.+?)'\(代码:(.+?)\)在(.+?)同时收费，疑似父子重复收费，涉及(.+?)，合计金额:(.+?)$", text)
+    if m:
+        return f'Parent item "{m.group(1)}" (code: {m.group(2)}) and child item "{m.group(3)}" (code: {m.group(4)}) charged simultaneously at {m.group(5)}, suspected parent-child duplicate, involving {m.group(6)}, total: {m.group(7)}'
+
+    return text
+
+
 def _system_issue(result: Optional[Result]) -> str:
     if not result:
         return ''
-    return result.reason or result.violation_item or getattr(result.rule, 'description', '') or ''
+    raw = result.reason or result.violation_item or ''
+    return _translate_reason(raw)
 
 
 def _system_text(result: Optional[Result]) -> str:

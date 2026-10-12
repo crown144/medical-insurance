@@ -1,6 +1,8 @@
 import { baseRequestClient } from '#/api/request';
 
-const LLM_REQUEST_TIMEOUT = 120_000;
+const LLM_REQUEST_TIMEOUT = 300_000;
+const COMPILE_POLL_INTERVAL = 1500;
+const COMPILE_POLL_TIMEOUT = 300_000;
 
 export interface RuleItem {
   id: number;
@@ -29,6 +31,14 @@ export interface RuleGenerateResult {
   validation?: Record<string, any>;
 }
 
+interface RuleCompileTaskStatus {
+  data?: RuleGenerateResult | { error?: string; error_type?: string } | null;
+  status: 'failed' | 'pending' | 'running' | 'success';
+  task_id: string;
+}
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 export async function getRuleList(params: any) {
   const response = await baseRequestClient.get<any>('/rules/', { params });
   return response.data;
@@ -54,14 +64,36 @@ export function updateRule(id: number | string, data: Partial<RuleItem>) {
 }
 
 export async function generateRuleApi(ruleText: string) {
-  const response = await baseRequestClient.post<any>(
-    '/rules/agenta/generate/',
+  const startResponse = await baseRequestClient.post<any>(
+    '/rules/agenta/generate/start/',
     {
       rule_text: ruleText,
     },
-    { timeout: LLM_REQUEST_TIMEOUT },
   );
-  return response.data?.result as RuleGenerateResult;
+  const taskId = startResponse.data?.result?.task_id;
+  if (!taskId) {
+    throw new Error('Rule compilation task was not created');
+  }
+
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < COMPILE_POLL_TIMEOUT) {
+    await wait(COMPILE_POLL_INTERVAL);
+    const statusResponse = await baseRequestClient.get<any>(
+      `/rules/agenta/generate/status/${taskId}/`,
+    );
+    const task = statusResponse.data?.result as RuleCompileTaskStatus | undefined;
+    if (!task) continue;
+
+    if (task.status === 'success') {
+      return task.data as RuleGenerateResult;
+    }
+    if (task.status === 'failed') {
+      const data = task.data as { error?: string } | null | undefined;
+      throw new Error(data?.error || statusResponse.data?.message || 'Rule compilation failed');
+    }
+  }
+
+  throw new Error('Rule compilation timed out. Please try again later or shorten the rule description.');
 }
 
 export async function validateRuleCodeApi(ruleCode: string) {

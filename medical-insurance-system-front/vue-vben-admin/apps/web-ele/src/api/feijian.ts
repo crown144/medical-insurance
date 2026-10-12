@@ -11,6 +11,9 @@ import type {
 
 import { baseRequestClient } from '#/api/request';
 
+const FEIJIAN_UPLOAD_TIMEOUT = 300_000;
+const FEIJIAN_ALIGNMENT_TIMEOUT = 300_000;
+
 // ==================== 统计 ====================
 
 export async function getFeiJianStatsApi(): Promise<FeiJianStats> {
@@ -31,7 +34,17 @@ export async function uploadFeiJianFileApi(
     formData,
     {
       headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: FEIJIAN_UPLOAD_TIMEOUT,
     },
+  );
+  return response.data;
+}
+
+/** 下载飞检导入示例文件 */
+export async function downloadFeiJianExampleApi(): Promise<Blob> {
+  const response = await baseRequestClient.get<any>(
+    '/feijian/examples/inspection-result/download/',
+    { responseType: 'blob' },
   );
   return response.data;
 }
@@ -125,7 +138,7 @@ export async function alignFeiJianResultsApi(
 ): Promise<AlignResultsResponse> {
   const response = await baseRequestClient.get<any>(
     `/feijian/import-batches/${batchId}/align-results/`,
-    { params },
+    { params, timeout: FEIJIAN_ALIGNMENT_TIMEOUT },
   );
   return response.data;
 }

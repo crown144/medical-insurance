@@ -43,6 +43,12 @@ def save_extracted_rules(task, rules):
 
     objs = []
     for r in rules:
+        source = r.get("source", {}) or {}
+        source = {
+            **source,
+            "constrained_object_en": str(r.get("constrained_object_en", "")),
+            "constraint_value_en": str(r.get("constraint_value_en", "")),
+        }
         objs.append(ExtractedRule(
             import_task=task,
             seq=r.get("rule_id", 0) or 0,
@@ -50,7 +56,7 @@ def save_extracted_rules(task, rules):
             constrained_object=str(r.get("constrained_object", ""))[:255],
             constraint_value=str(r.get("constraint_value", "")),
             evidence=r.get("evidence", {}) or {},
-            source=r.get("source", {}) or {},
+            source=source,
         ))
 
     if objs:

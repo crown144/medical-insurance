@@ -8,6 +8,8 @@ export default defineConfig(async () => {
     vite: {
       // ❌ 删除 plugins: [ ElementPlus(...) ]，Vben 内部已处理，无需重复配置
       server: {
+        allowedHosts: ['ruleflow.ecustnlplab.com'],
+
         proxy: {
           '/api': {
             // ✅ 1. 指向 Django 后端

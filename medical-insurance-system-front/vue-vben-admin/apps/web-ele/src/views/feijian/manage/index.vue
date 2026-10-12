@@ -12,14 +12,19 @@ import type {
 import { computed, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
-import { DataAnalysis, Refresh, Search, Upload } from '@element-plus/icons-vue';
+import { DataAnalysis, Download, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
-import { getRuleTypeLabel } from '../../../config/rule-type';
+import {
+  getRuleDescriptionEnglish,
+  getRuleTypeLabel,
+  getViolationReasonEnglish,
+} from '../../../config/rule-type';
 
 import {
   alignFeiJianResultsApi,
   buildFeiJianAuditTaskApi,
   confirmFeiJianImportApi,
+  downloadFeiJianExampleApi,
   getImportBatchesApi,
   getFeiJianStatsApi,
   getRawRecordsApi,
@@ -120,7 +125,7 @@ const alignmentItems = ref<AlignmentResult[]>([]);
 const alignmentPage = ref(1);
 const alignmentPageSize = ref(10);
 const alignmentTotal = ref(0);
-const alignmentUseLlm = ref(true);
+const alignmentUseLlm = ref(false);
 const alignmentDetailVisible = ref(false);
 const selectedAlignmentDetail = ref<AlignmentResult | null>(null);
 const selectedAlignmentBatch = computed(() =>
@@ -142,6 +147,28 @@ function getBatchStatusType(status: string) {
     importing: 'warning', success: 'success', failed: 'danger',
   };
   return map[status] || 'info';
+}
+
+function systemIssueText(row?: AlignmentResult | null) {
+  const issue = row?.systemIssue || '';
+  if (!issue) return '-';
+  return (
+    getViolationReasonEnglish(issue) ||
+    getRuleDescriptionEnglish(issue) ||
+    issue
+  );
+}
+
+function getBatchStatusLabel(status: string, fallback?: string) {
+  const map: Record<string, string> = {
+    uploading: 'Uploading',
+    analyzing: 'Analyzing',
+    mapping: 'Mapping Required',
+    importing: 'Importing',
+    success: 'Imported',
+    failed: 'Failed',
+  };
+  return map[status] || fallback || status || '-';
 }
 
 function getConfidenceColor(confidence: number) {
@@ -167,6 +194,22 @@ function getMatchStatusType(status: string) {
     'system-only': 'info',
   };
   return map[status] || 'info';
+}
+
+function getMatchStatusLabel(status: string, fallback?: string) {
+  const map: Record<string, string> = {
+    matched: 'Matched',
+    partial: 'Partial Match',
+    unmatched: 'Inspection Only',
+    'system-only': 'System Only',
+  };
+  return map[status] || fallback || status || '-';
+}
+
+function getVisibleMatchReasons(reasons?: string[]) {
+  return (reasons || []).filter(
+    (reason) => !/(amount|金额|费用|元|proximity)/i.test(reason),
+  );
 }
 
 // 目标字段标签映射
@@ -239,7 +282,7 @@ async function loadAuditRules() {
     auditRules.value = Array.isArray(result) ? result : [];
   } catch (error) {
     console.error('加载飞检可执行规则失败', error);
-    ElMessage.error('加载可执行规则失败');
+    ElMessage.error('Failed to load executable rules');
   } finally {
     auditRulesLoading.value = false;
   }
@@ -255,6 +298,22 @@ watch(auditSelectedSchemas, () => {
 });
 
 // ==================== 导入流程 ====================
+
+async function handleDownloadExample() {
+  try {
+    const blob = await downloadFeiJianExampleApi();
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'inspection_result.xlsx';
+    document.body.append(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  } catch {
+    ElMessage.error('Failed to download the example file.');
+  }
+}
 
 /** 步骤1: 选择文件并上传分析 */
 async function handleFileUpload(file: File) {
@@ -351,7 +410,7 @@ async function handleBuildAuditTask() {
     return;
   }
   if (auditSelectedRuleIds.value.length === 0) {
-    ElMessage.warning('请至少选择一条执行规则');
+    ElMessage.warning('Select at least one execution rule');
     return;
   }
 
@@ -525,6 +584,9 @@ onMounted(() => {
               </div>
             </div>
             <div class="tab-actions">
+              <el-button :icon="Download" @click="handleDownloadExample">
+                Example File Download
+              </el-button>
               <el-button type="primary" :icon="Upload" :loading="uploading" @click="triggerFileInput">
                 {{ uploading ? 'Analyzing...' : 'Upload Inspection File' }}
               </el-button>
@@ -547,6 +609,7 @@ onMounted(() => {
               <div class="analysis-left">
                 <div class="list-title">Column Mapping Confirmation</div>
                 <div class="table-card">
+                  <div class="mapping-table-wrap">
                   <table class="mapping-table">
                     <thead>
                       <tr>
@@ -561,7 +624,7 @@ onMounted(() => {
                       <tr v-for="m in analysisMappings" :key="m.field_key">
                         <td class="field-label-cell">
                           <span class="required-mark">*</span>
-                          {{ m.field_label }}
+                          {{ fieldLabels[m.field_key] || m.field_label }}
                         </td>
                         <td>
                           <el-tag size="small" type="success">{{ m.column_name }}</el-tag>
@@ -619,6 +682,7 @@ onMounted(() => {
                       </tr>
                     </tbody>
                   </table>
+                  </div>
                 </div>
               </div>
 
@@ -694,7 +758,9 @@ onMounted(() => {
               </el-table-column>
               <el-table-column label="Status" width="100" align="center">
                 <template #default="{ row }">
-                  <el-tag :type="getBatchStatusType(row.status)" size="small">{{ row.status_label }}</el-tag>
+                  <el-tag :type="getBatchStatusType(row.status)" size="small">
+                    {{ getBatchStatusLabel(row.status, row.status_label) }}
+                  </el-tag>
                 </template>
               </el-table-column>
               <el-table-column prop="created_at" label="Imported At" width="180" align="center" />
@@ -747,9 +813,6 @@ onMounted(() => {
                 </template>
               </el-table-column>
               <el-table-column prop="issue_description" label="Issue Description" min-width="200" show-overflow-tooltip />
-              <el-table-column label="Amount" width="110" align="center">
-                <template #default="{ row }">{{ row.involved_amount?.toLocaleString() }}</template>
-              </el-table-column>
               <el-table-column prop="audit_org" label="Inspection Agency" width="150" align="center" />
               <el-table-column prop="audit_date" label="Inspection Date" width="110" align="center" />
               <el-table-column prop="import_file_name" label="Source File" min-width="180" show-overflow-tooltip />
@@ -831,7 +894,7 @@ onMounted(() => {
                       collapse-tags
                       collapse-tags-tooltip
                       :loading="auditRulesLoading"
-                      placeholder="选择具体执行规则"
+                      placeholder="Select execution rules"
                       style="width: 360px"
                     >
                       <el-option
@@ -844,10 +907,10 @@ onMounted(() => {
                     <el-input
                       v-model="auditRuleSearch"
                       clearable
-                      placeholder="筛选规则"
+                      placeholder="Filter rules"
                       style="width: 130px; margin-top: 6px"
                     />
-                    <div class="muted">已选 {{ auditSelectedRuleIds.length }} 条；仅展示已启用且属于所选方案的规则。</div>
+                    <div class="muted">{{ auditSelectedRuleIds.length }} selected; only enabled rules in the selected schemes are shown.</div>
                   </div>
                   <div class="query-item">
                     <div class="query-label">Execution Mode</div>
@@ -883,7 +946,12 @@ onMounted(() => {
               <div class="summary-item">
                 <span class="muted">Status</span>
                 <el-tag :type="getBatchStatusType(selectedAuditBatch.status)" size="small">
-                  {{ selectedAuditBatch.status_label }}
+                  {{
+                    getBatchStatusLabel(
+                      selectedAuditBatch.status,
+                      selectedAuditBatch.status_label,
+                    )
+                  }}
                 </el-tag>
               </div>
             </div>
@@ -907,7 +975,7 @@ onMounted(() => {
         <!-- ==================== Tab 4: 结果对齐 ==================== -->
         <el-tab-pane label="Result Alignment" name="alignment">
           <div class="tab-header">
-            <span class="tab-desc">Align inspection findings with system audit results using hospitalization ID matching, normalized issue types, text similarity, and amount proximity.</span>
+            <span class="tab-desc">Align inspection findings with system audit results using hospitalization ID matching, normalized issue types, text similarity, and optional LLM review.</span>
           </div>
           <div class="alignment-panel">
             <div class="query-card">
@@ -940,12 +1008,13 @@ onMounted(() => {
                   </div>
                   <div class="query-item">
                     <div class="query-label">LLM Matching</div>
-                    <el-switch
-                      v-model="alignmentUseLlm"
-                      active-text="On"
-                      inactive-text="Off"
-                    />
-                  </div>
+	                    <el-switch
+	                      v-model="alignmentUseLlm"
+	                      active-text="On"
+	                      inactive-text="Off"
+	                    />
+	                    <div class="field-hint">Keep off for large batches to avoid slow requests.</div>
+	                  </div>
                   <div class="query-actions">
                     <el-button
                       type="primary"
@@ -1020,27 +1089,21 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="System Issue" min-width="360">
                   <template #default="{ row }">
-                    <div class="issue-main issue-text system-issue-text">{{ row.systemIssue || '-' }}</div>
+                    <div class="issue-main issue-text system-issue-text">{{ systemIssueText(row) }}</div>
                     <div class="muted">{{ getRuleTypeLabel(row.systemCategory) }}</div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="Amount" width="140" align="center">
-                  <template #default="{ row }">
-                    <div>{{ row.feijianAmount?.toLocaleString() || 0 }}</div>
-                    <div class="muted">{{ row.systemAmount?.toLocaleString() || 0 }}</div>
                   </template>
                 </el-table-column>
                 <el-table-column label="Match Status" width="120" align="center">
                   <template #default="{ row }">
                     <el-tag :type="getMatchStatusType(row.matchStatus)" size="small">
-                      {{ row.matchStatusLabel }}
+                      {{ getMatchStatusLabel(row.matchStatus, row.matchStatusLabel) }}
                     </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column width="110" align="center">
                   <template #header>
                     <el-tooltip
-                      content="The match score is a 0-100 score computed by the backend using hospitalization ID consistency, normalized issue type, text similarity, amount proximity, and LLM review."
+                      content="The match score is a 0-100 score computed by the backend using hospitalization ID consistency, normalized issue type, text similarity, and optional LLM review."
                       placement="top"
                     >
                       <span>Match Score</span>
@@ -1052,7 +1115,7 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="Evidence" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
-                    {{ row.matchReasons?.join('、') || '-' }}
+                    {{ getVisibleMatchReasons(row.matchReasons).join('、') || '-' }}
                   </template>
                 </el-table-column>
                 <el-table-column label="Actions" width="140" fixed="right" align="center">
@@ -1106,7 +1169,12 @@ onMounted(() => {
                 </div>
               </div>
               <el-tag :type="getMatchStatusType(selectedAlignmentDetail.matchStatus)">
-                {{ selectedAlignmentDetail.matchStatusLabel }}
+                {{
+                  getMatchStatusLabel(
+                    selectedAlignmentDetail.matchStatus,
+                    selectedAlignmentDetail.matchStatusLabel,
+                  )
+                }}
               </el-tag>
             </div>
 
@@ -1117,18 +1185,12 @@ onMounted(() => {
                 <div class="detail-meta">
                   Category: {{ getRuleTypeLabel(selectedAlignmentDetail.feijianCategory) }}
                 </div>
-                <div class="detail-meta">
-                  Amount: {{ selectedAlignmentDetail.feijianAmount?.toLocaleString() || 0 }}
-                </div>
               </div>
               <div class="detail-block">
                 <div class="detail-label">System Issue</div>
-                <div class="detail-text">{{ selectedAlignmentDetail.systemIssue || '-' }}</div>
+                <div class="detail-text">{{ systemIssueText(selectedAlignmentDetail) }}</div>
                 <div class="detail-meta">
                   Category: {{ getRuleTypeLabel(selectedAlignmentDetail.systemCategory) }}
-                </div>
-                <div class="detail-meta">
-                  Amount: {{ selectedAlignmentDetail.systemAmount?.toLocaleString() || 0 }}
                 </div>
               </div>
             </div>
@@ -1139,14 +1201,14 @@ onMounted(() => {
                 {{ Math.round((selectedAlignmentDetail.matchScore || 0) * 100) }}%
               </div>
               <div class="detail-meta">
-                Computed from hospitalization ID consistency, normalized issue type, text similarity, amount proximity, and LLM review.
+                Computed from hospitalization ID consistency, normalized issue type, text similarity, and optional LLM review.
               </div>
             </div>
 
             <div class="detail-block">
               <div class="detail-label">Matching Evidence</div>
               <el-tag
-                v-for="reason in selectedAlignmentDetail.matchReasons || []"
+                v-for="reason in getVisibleMatchReasons(selectedAlignmentDetail.matchReasons)"
                 :key="reason"
                 class="mr-1 mb-1"
                 effect="plain"
@@ -1154,6 +1216,12 @@ onMounted(() => {
               >
                 {{ reason }}
               </el-tag>
+              <span
+                v-if="getVisibleMatchReasons(selectedAlignmentDetail.matchReasons).length === 0"
+                class="muted"
+              >
+                -
+              </span>
               <span v-if="!selectedAlignmentDetail.matchReasons?.length" class="muted">No evidence available.</span>
             </div>
           </div>
@@ -1329,6 +1397,12 @@ onMounted(() => {
   font-size: 12px;
   color: #667085;
 }
+.field-hint {
+  max-width: 220px;
+  font-size: 12px;
+  color: #98a2b3;
+  line-height: 1.4;
+}
 .query-actions {
   display: flex;
   gap: 10px;
@@ -1385,8 +1459,12 @@ onMounted(() => {
 }
 
 /* 映射表 */
+.mapping-table-wrap {
+  overflow-x: auto;
+}
 .mapping-table {
   width: 100%;
+  min-width: 640px;
   border-collapse: collapse;
   font-size: 13px;
 }

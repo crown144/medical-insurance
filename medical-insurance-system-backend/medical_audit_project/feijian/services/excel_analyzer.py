@@ -48,7 +48,7 @@ TARGET_FIELDS: List[TargetField] = [
         label='医疗机构',
         patterns=[
             r'医疗机构', r'医院名称', r'医院$', r'机构名称',
-            r'hospital', r'institution', r'org.?name',
+            r'medical.?institution', r'hospital', r'institution', r'org.?name',
             r'定点机构', r'医药机构',
         ],
     ),
@@ -59,7 +59,8 @@ TARGET_FIELDS: List[TargetField] = [
             r'问题类型', r'违规类型', r'问题类别', r'违规类别',
             r'问题性质', r'违规项目', r'检查类型',
             r'issue.?type', r'violation.?type', r'category',
-            r'问题大类', r'违规大类',
+            r'issue.?category', r'rule.?name', r'finding.?category',
+            r'问题大类', r'违规大类', r'规则名称',
         ],
     ),
     TargetField(
@@ -68,7 +69,8 @@ TARGET_FIELDS: List[TargetField] = [
         patterns=[
             r'问题描述', r'违规描述', r'描述$', r'具体情况',
             r'description', r'detail', r'finding',
-            r'违规内容', r'检查发现', r'问题详情',
+            r'issue.?description', r'review.?opinion', r'finding.?detail',
+            r'违规内容', r'检查发现', r'问题详情', r'复审意见',
         ],
     ),
     TargetField(

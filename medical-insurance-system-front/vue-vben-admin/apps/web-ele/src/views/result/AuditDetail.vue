@@ -13,6 +13,13 @@ import {
 import axios from 'axios';
 import { ElButton, ElEmpty, ElIcon, ElMessage, ElTag } from 'element-plus';
 
+import {
+  getRuleDescriptionEnglish,
+  getRuleNameEnglish,
+  getRuleTypeLabel,
+  getViolationReasonEnglish,
+} from '../../config/rule-type';
+
 const API_BASE_URL = '/api';
 const PATIENT_CASE_API = '/api/cases/patient-case/';
 
@@ -450,7 +457,7 @@ const patientSummary = computed(() => {
   };
 });
 
-const formatRuleType = (t?: string) => t || 'Rule';
+const formatRuleType = (t?: string) => getRuleTypeLabel(t) || t || 'Rule';
 
 const getViolationName = (v: ViolationItem) => {
   // 1. 尝试从 violation_item (这里假设后端API如果包含了它，需要添加到 ViolationItem 接口定义) 获取
@@ -471,7 +478,16 @@ const getViolationName = (v: ViolationItem) => {
     } catch {}
   }
 
-  return parsedName || v.rule?.drugName || 'Unknown Item';
+  const rawName = parsedName || v.rule?.drug_name || 'Unknown Item';
+  return getRuleNameEnglish(rawName) || rawName;
+};
+
+const getViolationReason = (v: ViolationItem) => {
+  return getViolationReasonEnglish(v.reason) || v.reason || '-';
+};
+
+const getRuleDescription = (v: ViolationItem) => {
+  return getRuleDescriptionEnglish(v.rule?.description) || v.rule?.description || '-';
 };
 </script>
 
@@ -551,10 +567,10 @@ const getViolationName = (v: ViolationItem) => {
                   </ElTag>
                 </div>
               </div>
-              <div class="desc-text">{{ v.rule?.description }}</div>
+              <div class="desc-text">{{ getRuleDescription(v) }}</div>
               <div class="reason-box">
                 <div class="reason-title">Reason:</div>
-                <div class="reason-content">{{ v.reason }}</div>
+                <div class="reason-content">{{ getViolationReason(v) }}</div>
               </div>
               <div
                 class="card-footer"

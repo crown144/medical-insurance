@@ -67,9 +67,10 @@ class UploadApiTests(TestCase):
         # chunk_size 仅由后端配置决定（前端不再传）
         self.assertEqual(task.params['chunk_size'],
                          settings.RULE_IMPORT_DEFAULT_CHUNK_SIZE)
-        # 数量类参数不传 = 不限数量(None)
+        # 数量类参数不传时使用后端默认保护值，避免大文件全量送入 LLM
         self.assertIsNone(task.params['max_pdf_pages'])
-        self.assertIsNone(task.params['max_rows_per_table'])
+        self.assertEqual(task.params['max_rows_per_table'],
+                         settings.RULE_IMPORT_DEFAULT_MAX_ROWS_PER_TABLE)
         self.assertIsNone(task.params['max_tables'])
         self.assertEqual(task.status, RuleImportTask.Status.PENDING)
         mock_delay.assert_called_once_with(task_id)
@@ -97,6 +98,21 @@ class OutputParsingTests(TestCase):
         first = task.rules.order_by('seq').first()
         self.assertEqual(first.rule_type, 'DRUG_RESTRICTION')
         self.assertEqual(first.constrained_object, '艾普拉唑')
+
+    @mock.patch('rule_import.services.rule_discovery.call_llm')
+    def test_rule_discovery_falls_back_when_llm_unavailable(self, mock_call_llm):
+        from .services.rule_discovery import extract_rules_from_table
+
+        mock_call_llm.side_effect = RuntimeError('Connection error.')
+        rules = extract_rules_from_table({
+            'headers': ['项目名称', '备注'],
+            'rows': [{'项目名称': '胃肠减压', '备注': '不得重复收费'}],
+        })
+
+        self.assertEqual(len(rules), 1)
+        self.assertEqual(rules[0]['constrained_object'], '胃肠减压')
+        self.assertEqual(rules[0]['rule_type'], 'DUPLICATE_CHARGE')
+        self.assertTrue(rules[0]['fallback'])
 
     def test_save_is_idempotent_on_rerun(self):
         task = RuleImportTask.objects.create(task_name='t2')

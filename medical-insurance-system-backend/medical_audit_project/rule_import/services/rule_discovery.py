@@ -29,6 +29,66 @@ RULE_TYPES = [
     "OTHER",
 ]
 
+TERM_TRANSLATIONS = {
+    '艾普拉唑': 'Ilaprazole',
+    '醋酸钙': 'Calcium acetate tablets',
+    '胃肠减压': 'Gastrointestinal decompression',
+    '耳部特殊治疗': 'Special ear treatment',
+    '静脉注射': 'Intravenous injection',
+    '静脉采血': 'Venous blood collection',
+    '动脉加压注射': 'Arterial pressure injection',
+    '动脉采血': 'Arterial blood collection',
+    '机械辅助排痰': 'Mechanical assisted sputum clearance',
+    '血气分析': 'Blood gas analysis',
+    '血清碳酸氢盐(HCO3)测定': 'Serum bicarbonate (HCO3) test',
+    '尿液分析': 'Urinalysis',
+    '尿沉渣白细胞分类': 'Urinary sediment leukocyte classification',
+    '尿蛋白定量': 'Urine protein quantification',
+    '急诊监护费': 'Emergency monitoring fee',
+    '急诊诊查费': 'Emergency consultation fee',
+}
+
+TEXT_TRANSLATIONS = {
+    '使用艾普拉唑须有十二指肠溃疡、反流性食管炎诊断':
+        'Use of ilaprazole requires a diagnosis of duodenal ulcer or reflux esophagitis',
+    '使用醋酸钙须有高磷血症诊断':
+        'Use of calcium acetate tablets requires a diagnosis of hyperphosphatemia',
+    '插胃管加收10元':
+        'An additional 10 yuan may be charged when a gastric tube is inserted',
+    '原价79元，射频、激光、微波加收20元；等离子加收50元；冷冻减收55元':
+        'The base price is 79 yuan; radiofrequency, laser, or microwave treatment may add 20 yuan; plasma treatment may add 50 yuan; cryotherapy should reduce the charge by 55 yuan',
+    '“静脉注射”与“静脉采血”不能同时开':
+        'Intravenous injection and venous blood collection cannot be ordered at the same time',
+    '“动脉加压注射”与“动脉采血”不能同时开':
+        'Arterial pressure injection and arterial blood collection cannot be ordered at the same time',
+    '机械辅助排痰使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日':
+        'The total quantity of mechanical assisted sputum clearance exceeds the allowed limit; the daily limit is 1 day',
+    '使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日':
+        'The total quantity of the service item exceeds the allowed limit; the daily limit is 1 day',
+    '收取“血气分析”费用的同时收取“血清碳酸氢盐(HCO3)测定”费用':
+        'Charging for blood gas analysis together with serum bicarbonate (HCO3) testing',
+    '收取尿液分析费用时，同时收取尿沉渣白细胞分类费用或尿蛋白定量费用':
+        'Charging for urinalysis together with urinary sediment leukocyte classification or urine protein quantification',
+    '单日不得与急诊诊查费同时收费':
+        'May not be charged together with emergency consultation fee on the same day',
+    '急诊监护费单日不得与急诊诊查费同时收费':
+        'Emergency monitoring fee may not be charged together with emergency consultation fee on the same day',
+}
+
+
+def translate_rule_text(value):
+    text = str(value or '').strip()
+    if not text:
+        return ''
+    if text in TEXT_TRANSLATIONS:
+        return TEXT_TRANSLATIONS[text]
+    if text in TERM_TRANSLATIONS:
+        return TERM_TRANSLATIONS[text]
+    translated = text
+    for cn, en in sorted(TERM_TRANSLATIONS.items(), key=lambda item: len(item[0]), reverse=True):
+        translated = translated.replace(cn, en)
+    return translated if translated != text else ''
+
 
 def extract_json_from_llm(text):
     if not text:
@@ -209,7 +269,9 @@ def build_prompt(headers, rows):
     {{
         "rule_type":"",
         "constrained_object":"",
+        "constrained_object_en":"",
         "constraint_value":"",
+        "constraint_value_en":"",
         "evidence":{{}}
     }}
     ]
@@ -231,11 +293,13 @@ def build_prompt(headers, rows):
 
     3.constraint_value为具体限制，即具体的违规限制
 
-    4.evidence直接返回触发规则的原始JSON行
+    4.constrained_object_en 和 constraint_value_en 必须是英文翻译，分别对应 constrained_object 和 constraint_value。英文必须自然、简洁、适合前端直接展示。
 
-    5.不要解释
+    5.evidence直接返回触发规则的原始JSON行
 
-    6.如果是显式规则不要改写，如果是隐式规则则可以根据相关知识改写，明确有违规检出逻辑的，将其作为constraint_value
+    6.不要解释
+
+    7.如果是显式规则不要改写，如果是隐式规则则可以根据相关知识改写，明确有违规检出逻辑的，将其作为constraint_value
 
     ----------------------------------
 
@@ -248,14 +312,75 @@ def build_prompt(headers, rows):
     """
 
 
+def _first_non_empty(row, field_names):
+    for field in field_names:
+        value = str(row.get(field, '') or '').strip()
+        if value and value.lower() != 'nan':
+            return value
+    return ''
+
+
+def _infer_rule_type(text):
+    if any(k in text for k in ['限', '适应症', '二线', '年龄', '科室', '疾病', '诊断']):
+        return 'DRUG_RESTRICTION'
+    if any(k in text for k in ['每日', '每天', '每次', '频次', '不超过', '限次', '次数']):
+        return 'FREQUENCY_LIMIT'
+    if any(k in text for k in ['不得同时', '不得重复', '重复', '包含', '另收', '不另收']):
+        return 'DUPLICATE_CHARGE'
+    if any(k in text for k in ['加收', '减收', '价格', '收费', '标准', '单价', '元']):
+        return 'PRICE_LIMIT'
+    if any(k in text for k in ['耗材', '材料']):
+        return 'CONSUMABLE_RESTRICTION'
+    if any(k in text for k in ['过度', '无指征', '不必要']):
+        return 'OVER_EXAMINATION'
+    return 'OTHER'
+
+
+def _fallback_extract_rules_from_rows(rows):
+    rules = []
+    object_fields = [
+        '药品名称', '药品通用名', '项目名称', '医疗服务项目名称',
+        '收费项目名称', '诊疗项目名称', '耗材名称', '名称',
+    ]
+    constraint_fields = [
+        '备注', '说明', '项目内涵', '限制条件', '支付条件',
+        '限定支付范围', '医保支付标准', '计价单位', '除外内容',
+        '违规检出逻辑', '逻辑依据',
+    ]
+    for row in rows:
+        constrained_object = _first_non_empty(row, object_fields)
+        constraint_value = _first_non_empty(row, constraint_fields)
+        if not constraint_value:
+            continue
+        rules.append({
+            'rule_type': _infer_rule_type(f'{constrained_object} {constraint_value}'),
+            'constrained_object': constrained_object,
+            'constrained_object_en': translate_rule_text(constrained_object),
+            'constraint_value': constraint_value,
+            'constraint_value_en': translate_rule_text(constraint_value),
+            'evidence': row,
+            'fallback': True,
+        })
+    return rules
+
+
 def extract_rules_from_table(table, max_rows_per_table=40, chunk_size=20):
     rows = table.get("rows", [])[:max_rows_per_table]
     all_rules = []
     for start in range(0, len(rows), chunk_size):
         chunk = rows[start:start + chunk_size]
         prompt = build_prompt(table["headers"], chunk)
-        result = call_llm(prompt, model=get_extract_model())
-        rules = extract_json_from_llm(result)
+        try:
+            result = call_llm(prompt, model=get_extract_model())
+            rules = extract_json_from_llm(result)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "LLM 规则抽取失败，使用本地兜底抽取 (rows=%s-%s): %s",
+                start,
+                start + len(chunk),
+                e,
+            )
+            rules = _fallback_extract_rules_from_rows(chunk)
         if isinstance(rules, list):
             all_rules.extend(rules)
     return all_rules

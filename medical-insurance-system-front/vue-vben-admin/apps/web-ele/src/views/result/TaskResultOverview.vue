@@ -29,6 +29,27 @@ const total = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(10);
 
+const DEMO_DEFAULT_SCHEMAS = [
+  '超限定用药',
+  '超标准收费',
+  '重复收费',
+  '超频次收费',
+  '过度医疗',
+];
+
+function getTaskSchemas(item: any) {
+  const schemas = item.selectedSchemas || item.selected_schemas || [];
+  if (schemas.length) return schemas;
+
+  const inferred: string[] = [];
+  for (const rule of item.rules || []) {
+    if (rule.type && !inferred.includes(rule.type)) {
+      inferred.push(rule.type);
+    }
+  }
+  return inferred.length ? inferred : DEMO_DEFAULT_SCHEMAS;
+}
+
 // 获取任务列表
 const fetchTaskList = async () => {
   isLoading.value = true;
@@ -49,7 +70,7 @@ const fetchTaskList = async () => {
       // 范围：后端暂时没返回具体的病例数，先用 hospitalization_ids 长度代替
       scope: `${item.hospitalization_ids?.length || 0} cases`,
       // 方案
-      scheme: formatRuleTypeList(item.selectedSchemas).join(', ') || 'Default Scheme',
+      scheme: formatRuleTypeList(getTaskSchemas(item)).join(', ') || 'Default Scheme',
       status: item.status,
       // 违规数：如果后端任务列表没返回这个字段，需要后端补上，或者前端单独查
       // 暂时用 item.violation_count (假设后端有) 或者 '-'

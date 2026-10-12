@@ -7,7 +7,11 @@ import { ElMessage } from 'element-plus';
 
 // 引入 API
 import { getTaskResultListApi } from '../../api/result';
-import { getRuleTypeLabel } from '../../config/rule-type';
+import {
+  getRuleNameEnglish,
+  getRuleTypeLabel,
+  getViolationReasonEnglish,
+} from '../../config/rule-type';
 
 const router = useRouter();
 
@@ -108,10 +112,10 @@ const fetchTableData = async () => {
         dept: '-', // 数据源暂无
         doctor: '-', // 数据源暂无
         // 违规信息
-        ruleName: finalRuleName,
+        ruleName: getRuleNameEnglish(finalRuleName) || finalRuleName,
         ruleType: item.rule?.type || 'General Rule',
         ruleTypeLabel: getRuleTypeLabel(item.rule?.type) || 'General Rule',
-        reason: item.reason,
+        reason: getViolationReasonEnglish(item.reason) || item.reason,
         // 时间信息
         visitDate: '-', // 就诊时间暂无
         dischargeTime: item.discharge_date

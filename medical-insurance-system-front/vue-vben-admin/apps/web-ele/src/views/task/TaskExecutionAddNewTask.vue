@@ -34,6 +34,13 @@ import {
   searchInhosApi,
 } from '../../api/task';
 import { DEMO_MODE } from '../../config/demo';
+import {
+  filterDemoRules,
+  getDisplayRuleId,
+  isDemoRuleType,
+  getRuleDescriptionEnglish,
+  getRuleNameEnglish,
+} from '../../config/rule-type';
 // import RepeatChargingRuleSelector from '../../components/RepeatChargingRuleSelector.vue'; // 已废弃
 
 // --- 数据接口 ---
@@ -81,6 +88,79 @@ const inhosSearchLimit = ref(0);
 const demoCases = ref<DemoCaseItem[]>([]);
 const isLoadingDemoCases = ref(false);
 
+const DEMO_RULE_FALLBACKS: RuleItem[] = [
+  {
+    id: 1,
+    ruleId: 'R-0001',
+    drug_name: '艾普拉唑',
+    description: '使用艾普拉唑须有十二指肠溃疡、反流性食管炎诊断',
+    type: '超限定用药',
+  },
+  {
+    id: 14,
+    ruleId: 'R-0002',
+    drug_name: '醋酸钙',
+    description: '使用醋酸钙须有高磷血症诊断',
+    type: '超限定用药',
+  },
+  {
+    id: 29,
+    ruleId: 'R-20260704151155530323',
+    drug_name: '胃肠减压',
+    description: '插胃管加收10元',
+    type: '超标准收费',
+  },
+  {
+    id: 30,
+    ruleId: 'R-20260704151155864177',
+    drug_name: '耳部特殊治疗',
+    description: '原价79元，射频、激光、微波加收20元；等离子加收50元；冷冻减收55元',
+    type: '超标准收费',
+  },
+  {
+    id: 37,
+    ruleId: 'R-20260704151200686615',
+    drug_name: '静脉注射',
+    description: '“静脉注射”与“静脉采血”不能同时开',
+    type: '重复收费',
+  },
+  {
+    id: 38,
+    ruleId: 'R-20260704151201033234',
+    drug_name: '动脉加压注射',
+    description: '“动脉加压注射”与“动脉采血”不能同时开',
+    type: '重复收费',
+  },
+  {
+    id: 47,
+    ruleId: 'R-20260704151207016105',
+    drug_name: '机械辅助排痰',
+    description: '机械辅助排痰使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日',
+    type: '超频次收费',
+  },
+  {
+    id: 48,
+    ruleId: 'R-20260704151207710658',
+    drug_name: '胃肠减压',
+    description: '使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日',
+    type: '超频次收费',
+  },
+  {
+    id: 66,
+    ruleId: 'R-20260709123055310514',
+    drug_name: '血气分析',
+    description: '收取“血气分析”费用的同时收取“血清碳酸氢盐(HCO3)测定”费用',
+    type: '过度医疗',
+  },
+  {
+    id: 67,
+    ruleId: 'R-20260709124003677192',
+    drug_name: '尿液分析',
+    description: '收取尿液分析费用时，同时收取尿沉渣白细胞分类费用或尿蛋白定量费用',
+    type: '过度医疗',
+  },
+];
+
 /** 规则名提取：从描述中提取规则名 (复用自 RuleDetail.vue) */
 function extractRuleName(desc: string) {
   const s = (desc || '').trim();
@@ -105,10 +185,52 @@ function processRules(data: any): RuleItem[] {
 
   return list.map((item: any) => ({
     ...item,
+    ruleId: item.ruleId || item.rule_id,
+    displayRuleId: getDisplayRuleId(item.ruleId || item.rule_id),
     // 优先用后端返回的 drug_name，其次尝试 drugName，最后从描述提取
     drug_name:
       item.drug_name || item.drugName || extractRuleName(item.description),
   }));
+}
+
+function processDemoRules(data: any): RuleItem[] {
+  return processRules(filterDemoRules(Array.isArray(data) ? data : data?.items || data?.results || []));
+}
+
+function filterRulesByType(items: RuleItem[], type: string, keyword = '') {
+  const query = keyword.trim().toLowerCase();
+  return items.filter((item) => {
+    if (!isDemoRuleType(item, type)) return false;
+    if (!query) return true;
+    return [item.ruleId, item.displayRuleId, item.drug_name, item.description, item.type]
+      .join(' ')
+      .toLowerCase()
+      .includes(query);
+  });
+}
+
+async function loadDemoRuleList() {
+  const res = await getRuleListApi({ paginate: 'false', ordering: 'id' });
+  const rules = processDemoRules(res);
+  const ruleMap = new Map<string, RuleItem>();
+  for (const rule of DEMO_RULE_FALLBACKS) {
+    ruleMap.set(rule.ruleId, rule);
+  }
+  for (const rule of rules) {
+    ruleMap.set(rule.ruleId, rule);
+  }
+  return Array.from(ruleMap.values()).map((rule) => ({
+    ...rule,
+    displayRuleId: getDisplayRuleId(rule.ruleId),
+  }));
+}
+
+function getDisplayRuleName(row: RuleItem) {
+  return getRuleNameEnglish(row.drug_name) || row.drug_name || '-';
+}
+
+function getDisplayRuleDescription(row: RuleItem) {
+  return getRuleDescriptionEnglish(row.description) || row.description || '-';
 }
 
 // 新增：重复收费 & 超标准收费 的状态
@@ -142,13 +264,11 @@ const loadRepeatRules = async () => {
   }
   isLoadingRepeatRules.value = true;
   try {
-    const params = {
-      search: repeatRuleSearchQuery.value.trim() || undefined,
-      type__in: '重复收费', // 过滤类型
-      paginate: 'false',
-    };
-    const res = await getRuleListApi(params);
-    repeatRules.value = processRules(res);
+    repeatRules.value = filterRulesByType(
+      await loadDemoRuleList(),
+      '重复收费',
+      repeatRuleSearchQuery.value,
+    );
   } catch (error) {
     console.error('加载重复收费规则失败', error);
   } finally {
@@ -170,13 +290,11 @@ const loadOverStandardRules = async () => {
   }
   isLoadingOverStandardRules.value = true;
   try {
-    const params = {
-      search: overStandardRuleSearchQuery.value.trim() || undefined,
-      type__in: '超标准收费', // 过滤类型
-      paginate: 'false',
-    };
-    const res = await getRuleListApi(params);
-    overStandardRules.value = processRules(res);
+    overStandardRules.value = filterRulesByType(
+      await loadDemoRuleList(),
+      '超标准收费',
+      overStandardRuleSearchQuery.value,
+    );
   } catch (error) {
     console.error('加载超标准收费规则失败', error);
   } finally {
@@ -206,13 +324,11 @@ const loadOverFrequencyRules = async () => {
   }
   isLoadingOverFrequencyRules.value = true;
   try {
-    const params = {
-      search: overFrequencyRuleSearchQuery.value.trim() || undefined,
-      type__in: '超频次收费',
-      paginate: 'false',
-    };
-    const res = await getRuleListApi(params);
-    overFrequencyRules.value = processRules(res);
+    overFrequencyRules.value = filterRulesByType(
+      await loadDemoRuleList(),
+      '超频次收费',
+      overFrequencyRuleSearchQuery.value,
+    );
   } catch (error) {
     console.error('加载超频次收费规则失败', error);
   } finally {
@@ -233,13 +349,11 @@ const loadOverMedicalRules = async () => {
   }
   isLoadingOverMedicalRules.value = true;
   try {
-    const params = {
-      search: overMedicalRuleSearchQuery.value.trim() || undefined,
-      type__in: '过度医疗',
-      paginate: 'false',
-    };
-    const res = await getRuleListApi(params);
-    overMedicalRules.value = processRules(res);
+    overMedicalRules.value = filterRulesByType(
+      await loadDemoRuleList(),
+      '过度医疗',
+      overMedicalRuleSearchQuery.value,
+    );
   } catch (error) {
     console.error('加载过度医疗规则失败', error);
   } finally {
@@ -269,13 +383,11 @@ const loadAllRules = async () => {
   }
   isLoadingRules.value = true;
   try {
-    const params = {
-      search: ruleSearchQuery.value.trim() || undefined,
-      type__in: '超限定用药',
-      paginate: 'false',
-    };
-    const res = await getRuleListApi(params);
-    allRules.value = processRules(res);
+    allRules.value = filterRulesByType(
+      await loadDemoRuleList(),
+      '超限定用药',
+      ruleSearchQuery.value,
+    );
   } catch (error) {
     console.error('加载规则失败', error);
   } finally {
@@ -290,7 +402,19 @@ const loadDemoCases = async () => {
   if (!DEMO_MODE) return;
   isLoadingDemoCases.value = true;
   try {
-    demoCases.value = await getDemoCaseListApi();
+    const seenIds = new Set<string>();
+    demoCases.value = (await getDemoCaseListApi())
+      .map((item) => ({
+        ...item,
+        hospitalization_id: normalizeHospitalizationId(item.hospitalization_id),
+      }))
+      .filter((item) => {
+        if (!item.hospitalization_id || seenIds.has(item.hospitalization_id)) {
+          return false;
+        }
+        seenIds.add(item.hospitalization_id);
+        return true;
+      });
   } catch (error) {
     console.error('Failed to load demo cases', error);
     ElMessage.error('Failed to load demo cases.');
@@ -302,10 +426,6 @@ const loadDemoCases = async () => {
 onMounted(loadDemoCases);
 
 const searchInhosNumbers = async () => {
-  if (!form.value.mdc_org_cd.trim()) {
-    ElMessage.warning('Please enter the medical institution code.');
-    return;
-  }
   if (!form.value.discharge_date_start && !form.value.drug_name.trim()) {
     ElMessage.warning('Please select a date or enter a drug name to filter.');
     return;
@@ -313,7 +433,6 @@ const searchInhosNumbers = async () => {
   isLoadingInhos.value = true;
   try {
     const params: InhosSearchParams = {};
-    params.mdc_org_cd = form.value.mdc_org_cd.trim();
     if (form.value.discharge_date_start)
       params.start_date = form.value.discharge_date_start;
     if (form.value.discharge_date_end)
@@ -395,14 +514,23 @@ const handleRuleSelectionChange = (selectedRows: RuleItem[]) => {
   form.value.selected_rule_ids = selectedRows.map((row) => row.id);
 };
 
+const getRuleIdsForPayload = (selectedIds: number[], visibleRules: RuleItem[]) => {
+  return selectedIds.length > 0
+    ? selectedIds
+    : visibleRules.map((rule) => rule.id);
+};
+
+const normalizeHospitalizationId = (value?: string) => {
+  const text = (value || '').trim();
+  return text.includes(':') ? text.split(':').pop()!.trim() : text;
+};
+
 const formatDemoCaseLabel = (item: DemoCaseItem) => {
-  return item.hospitalization_id;
+  return normalizeHospitalizationId(item.hospitalization_id);
 };
 
 const createTask = async () => {
   if (!form.value.name.trim()) return ElMessage.warning('Please enter a task name.');
-  if (!DEMO_MODE && !form.value.mdc_org_cd.trim())
-    return ElMessage.warning('Please enter the medical institution code.');
   if (form.value.hospitalization_ids.length === 0)
     return ElMessage.warning(
       DEMO_MODE
@@ -425,27 +553,44 @@ const createTask = async () => {
   try {
     // 聚合所有选中的规则ID
     const allSelectedRuleIds = [
-      ...(detectionSchemes.value.overLimit ? form.value.selected_rule_ids : []),
+      ...(detectionSchemes.value.overLimit
+        ? getRuleIdsForPayload(form.value.selected_rule_ids, allRules.value)
+        : []),
       ...(detectionSchemes.value.overStandard
-        ? selectedOverStandardRuleIds.value
+        ? getRuleIdsForPayload(
+            selectedOverStandardRuleIds.value,
+            overStandardRules.value,
+          )
         : []),
       ...(detectionSchemes.value.repeatCharging
-        ? selectedRepeatRuleIds.value
+        ? getRuleIdsForPayload(selectedRepeatRuleIds.value, repeatRules.value)
         : []),
       ...(detectionSchemes.value.overFrequency
-        ? selectedOverFrequencyRuleIds.value
+        ? getRuleIdsForPayload(
+            selectedOverFrequencyRuleIds.value,
+            overFrequencyRules.value,
+          )
         : []),
       ...(detectionSchemes.value.overMedical
-        ? selectedOverMedicalRuleIds.value
+        ? getRuleIdsForPayload(
+            selectedOverMedicalRuleIds.value,
+            overMedicalRules.value,
+          )
         : []),
     ];
 
+    if (allSelectedRuleIds.length === 0) {
+      ElMessage.warning('No demo rules are available for the selected schemes.');
+      return;
+    }
+
     const payload = {
       name: form.value.name,
-      mdc_org_cd: DEMO_MODE ? form.value.mdc_org_cd.trim() || '' : form.value.mdc_org_cd.trim(),
-      hospitalization_ids: form.value.hospitalization_ids,
+      mdc_org_cd: '',
+      hospitalization_ids: form.value.hospitalization_ids.map(normalizeHospitalizationId),
       rule_ids: allSelectedRuleIds, // 统一提交
       selectedSchemas,
+      selected_schemas: selectedSchemas,
       // 移除旧的重复收费字段
       repeatChargingChildCodes: [],
       repeatChargingPairs: [],
@@ -506,17 +651,6 @@ const goBack = () => router.back();
               size="large"
             />
           </div>
-          <div class="query-item" style="width: 220px">
-            <div class="query-label">
-              Medical Institution Code <span class="required">*</span>
-            </div>
-            <ElInput
-              v-model="form.mdc_org_cd"
-              placeholder="MDC_ORG_CD"
-              size="large"
-              clearable
-            />
-          </div>
         </div>
       </div>
 
@@ -529,6 +663,9 @@ const goBack = () => router.back();
         <div v-if="DEMO_MODE" class="query-item demo-case-select">
           <div class="query-label">
             Demo Case Selection <span class="required">*</span>
+            <span class="label-note">
+              Choose by hospitalization ID; each option maps to a preloaded patient ID and case record.
+            </span>
           </div>
           <ElSelect
             v-model="form.hospitalization_ids"
@@ -545,10 +682,12 @@ const goBack = () => router.back();
               v-for="item in demoCases"
               :key="item.hospitalization_id"
               :label="formatDemoCaseLabel(item)"
-              :value="item.hospitalization_id"
+              :value="normalizeHospitalizationId(item.hospitalization_id)"
             />
           </ElSelect>
-          <div class="demo-case-hint">Select one or more preloaded cases for audit.</div>
+          <div class="demo-case-hint">
+            The selected values are hospitalization IDs used to locate the corresponding patient ID and inpatient record in the demo dataset.
+          </div>
         </div>
 
         <div v-if="!DEMO_MODE" class="query-row">
@@ -760,11 +899,11 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
                 <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
-                      row.drug_name
+                      getDisplayRuleName(row)
                     }}</span>
                   </template>
                 </ElTableColumn>
@@ -772,7 +911,11 @@ const goBack = () => router.back();
                   prop="description"
                   label="Description"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ getDisplayRuleDescription(row) }}
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </div>
           </div>
@@ -787,7 +930,7 @@ const goBack = () => router.back();
               <span class="sub-title"
                 >Configure Duplicate Charge Rules
                 <span class="ml-2 text-xs text-blue-500"
-                  >{{ selectedRepeatRuleIds.length }} selected</span
+                  >{{ selectedRepeatRuleIds.length }} selected / {{ repeatRules.length }} available</span
                 ></span
               >
               <ElInput
@@ -815,11 +958,11 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
                 <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
-                      row.drug_name
+                      getDisplayRuleName(row)
                     }}</span>
                   </template>
                 </ElTableColumn>
@@ -827,7 +970,11 @@ const goBack = () => router.back();
                   prop="description"
                   label="Description"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ getDisplayRuleDescription(row) }}
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </div>
           </div>
@@ -870,11 +1017,11 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
                 <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
-                      row.drug_name
+                      getDisplayRuleName(row)
                     }}</span>
                   </template>
                 </ElTableColumn>
@@ -882,7 +1029,11 @@ const goBack = () => router.back();
                   prop="description"
                   label="Description"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ getDisplayRuleDescription(row) }}
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </div>
           </div>
@@ -925,11 +1076,11 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
                 <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
-                      row.drug_name
+                      getDisplayRuleName(row)
                     }}</span>
                   </template>
                 </ElTableColumn>
@@ -937,7 +1088,11 @@ const goBack = () => router.back();
                   prop="description"
                   label="Description"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ getDisplayRuleDescription(row) }}
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </div>
           </div>
@@ -980,11 +1135,11 @@ const goBack = () => router.back();
                   align="center"
                   :reserve-selection="true"
                 />
-                <ElTableColumn prop="ruleId" label="Rule ID" width="100" />
+                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
                 <ElTableColumn prop="drug_name" label="Rule Name" width="180">
                   <template #default="{ row }">
                     <span class="font-bold text-gray-700">{{
-                      row.drug_name
+                      getDisplayRuleName(row)
                     }}</span>
                   </template>
                 </ElTableColumn>
@@ -992,7 +1147,11 @@ const goBack = () => router.back();
                   prop="description"
                   label="Description"
                   show-overflow-tooltip
-                />
+                >
+                  <template #default="{ row }">
+                    {{ getDisplayRuleDescription(row) }}
+                  </template>
+                </ElTableColumn>
               </ElTable>
             </div>
           </div>
@@ -1097,6 +1256,11 @@ const goBack = () => router.back();
   font-size: 12px;
   color: #667085;
   font-weight: 500;
+}
+.label-note {
+  margin-left: 8px;
+  font-weight: 400;
+  color: #98a2b3;
 }
 .demo-case-hint {
   font-size: 12px;
