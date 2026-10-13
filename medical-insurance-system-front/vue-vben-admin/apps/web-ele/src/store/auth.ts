@@ -10,14 +10,54 @@ import { resetAllStores, useAccessStore, useUserStore } from '@vben/stores';
 import { ElNotification } from 'element-plus';
 import { defineStore } from 'pinia';
 
-import { getAccessCodesApi, getUserInfoApi, loginApi, logoutApi } from '#/api';
+import {
+  getAccessCodesApi,
+  getUserInfoApi,
+  loginApi,
+  logoutApi,
+  portalLoginApi,
+  portalEntryApi,
+} from '#/api';
+import type { PortalLoginParams } from '#/api/core/auth';
 import { $t } from '#/locales';
+import { readAccessToken } from './login-response';
 
 export const useAuthStore = defineStore('auth', () => {
   const accessStore = useAccessStore();
   const userStore = useUserStore();
   const router = useRouter();
   const loginLoading = ref(false);
+
+  function clearLoginState() {
+    accessStore.setAccessToken(null);
+    resetAllStores();
+    accessStore.setLoginExpired(false);
+  }
+
+  async function establishLogin(response: any) {
+    const token = readAccessToken(response);
+    const wasLoading = loginLoading.value;
+    clearLoginState();
+    loginLoading.value = wasLoading;
+    accessStore.setAccessToken(token);
+    try {
+      const [userInfo, accessCodes] = await Promise.all([
+        fetchUserInfo(),
+        getAccessCodesApi(),
+      ]);
+      userStore.setUserInfo(userInfo);
+      accessStore.setAccessCodes(accessCodes);
+      return userInfo;
+    } catch (error) {
+      clearLoginState();
+      throw error;
+    }
+  }
+
+  async function ssoLogin(params: PortalLoginParams) {
+    clearLoginState();
+    return establishLogin(await portalLoginApi(params));
+  }
 
   async function authLogin(
     params: Recordable<any>,
@@ -27,60 +67,31 @@ export const useAuthStore = defineStore('auth', () => {
     try {
       loginLoading.value = true;
 
-      // 1. 调用 API (baseRequestClient 返回完整 Axios 响应)
-      const response = await loginApi(params);
-
-      // 调试：看一眼原始数据
-      console.warn('🔥 登录接口完整响应:', response);
-
-      // 2. 🛡️【修正后的取值逻辑】🛡️
-      // 您的日志显示数据在 response.data.result.accessToken
-      // 为了保险，我们把所有可能的路径都试一遍
-      const accessToken =
-        response?.data?.result?.accessToken || // ✅ 命中您的当前结构
-        response?.data?.result?.token || // 兼容 Django 返回 token 字段
-        response?.data?.token || // 兼容没有 result 包裹的情况
-        response?.data?.accessToken ||
-        response?.result?.accessToken || // 兼容被拦截器解包后的情况
-        response?.token;
-
-      // 3. 判断是否成功
-      if (accessToken) {
-        console.warn('✅ 终于拿到 Token 了:', accessToken);
-        accessStore.setAccessToken(accessToken);
-
-        // 并行获取用户信息和权限
-        const [fetchUserInfoResult, accessCodes] = await Promise.all([
-          fetchUserInfo(),
-          getAccessCodesApi(),
-        ]);
-
-        userInfo = fetchUserInfoResult;
-        userStore.setUserInfo(userInfo);
-        accessStore.setAccessCodes(accessCodes);
-
-        if (accessStore.loginExpired) {
-          accessStore.setLoginExpired(false);
-        } else {
-          onSuccess
-            ? await onSuccess?.()
-            : await router.push(
-                userInfo?.homePath || preferences.app.defaultHomePath,
-              );
-        }
-
-        if (userInfo?.realName) {
-          ElNotification({
-            message: `${$t('authentication.loginSuccessDesc')}:${userInfo?.realName}`,
-            title: $t('authentication.loginSuccess'),
-            type: 'success',
-          });
-        }
-      } else {
-        console.error('❌ 仍然无法提取 Token，请检查路径匹配', response);
+      const wasExpired = accessStore.loginExpired;
+      userInfo = await establishLogin(await loginApi(params));
+      if (!wasExpired) {
+        onSuccess
+          ? await onSuccess()
+          : await router.push(
+              userInfo?.homePath || preferences.app.defaultHomePath,
+            );
+      }
+      if (userInfo?.realName) {
+        ElNotification({
+          message: `${$t('authentication.loginSuccessDesc')}:${userInfo.realName}`,
+          title: $t('authentication.loginSuccess'),
+          type: 'success',
+        });
       }
     } catch (error) {
-      console.error('登录过程发生异常:', error);
+      ElNotification({
+        title: '登录失败',
+        message:
+          (error as any)?.response?.data?.message ||
+          (error as Error)?.message ||
+          '请重试',
+        type: 'error',
+      });
     } finally {
       loginLoading.value = false;
     }
@@ -95,9 +106,7 @@ export const useAuthStore = defineStore('auth', () => {
       await logoutApi();
     } catch {}
     // 退出不依赖后端会话：无论接口是否可用，都必须立即移除本地访问令牌。
-    accessStore.setAccessToken(null);
-    resetAllStores();
-    accessStore.setLoginExpired(false);
+    clearLoginState();
     await router.replace({
       path: LOGIN_PATH,
       query: redirect
@@ -106,9 +115,21 @@ export const useAuthStore = defineStore('auth', () => {
     });
   }
 
-  async function fetchUserInfo() {
-    let userInfo: null | UserInfo = null;
-    userInfo = await getUserInfoApi();
+  async function logoutWithSso() {
+    // 门户地址由后端配置；本地账号部署仍可正常退出。
+    const configPromise = portalEntryApi('').catch(() => null);
+    await logout(false);
+    const config = await configPromise;
+    if (config?.logoutUrl) {
+      window.location.replace(config.logoutUrl);
+    }
+  }
+
+  async function fetchUserInfo(): Promise<UserInfo> {
+    const userInfo = await getUserInfoApi();
+    if (!userInfo || !Array.isArray(userInfo.roles)) {
+      throw new Error('登录用户资料缺少角色信息');
+    }
     userStore.setUserInfo(userInfo);
     return userInfo;
   }
@@ -120,8 +141,11 @@ export const useAuthStore = defineStore('auth', () => {
   return {
     $reset,
     authLogin,
+    clearLoginState,
     fetchUserInfo,
     loginLoading,
     logout,
+    logoutWithSso,
+    ssoLogin,
   };
 });

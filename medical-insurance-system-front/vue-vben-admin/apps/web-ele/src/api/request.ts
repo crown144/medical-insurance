@@ -21,11 +21,26 @@ import { refreshTokenApi } from './core';
 
 const { apiURL } = useAppConfig(import.meta.env, import.meta.env.PROD);
 
-function createRequestClient(baseURL: string, options?: RequestClientOptions) {
-  const client = new RequestClient({
-    ...options,
-    baseURL,
+function addAuthHeaders(client: RequestClient) {
+  client.addRequestInterceptor({
+    fulfilled: (config) => {
+      const token = useAccessStore().accessToken;
+      config.headers.Authorization = token ? `Bearer ${token}` : null;
+      config.headers.accessToken = token || null;
+      config.headers['Accept-Language'] = preferences.app.locale;
+      return config;
+    },
   });
+  return client;
+}
+
+function createRequestClient(baseURL: string, options?: RequestClientOptions) {
+  const client = addAuthHeaders(
+    new RequestClient({
+      ...options,
+      baseURL,
+    }),
+  );
 
   /**
    * 重新认证逻辑
@@ -59,17 +74,6 @@ function createRequestClient(baseURL: string, options?: RequestClientOptions) {
   function formatToken(token: null | string) {
     return token ? `Bearer ${token}` : null;
   }
-
-  // 请求头处理
-  client.addRequestInterceptor({
-    fulfilled: async (config) => {
-      const accessStore = useAccessStore();
-
-      config.headers.Authorization = formatToken(accessStore.accessToken);
-      config.headers['Accept-Language'] = preferences.app.locale;
-      return config;
-    },
-  });
 
   // 处理返回的响应数据格式
   client.addResponseInterceptor(
@@ -110,4 +114,7 @@ export const requestClient = createRequestClient(apiURL, {
   responseReturn: 'data',
 });
 
-export const baseRequestClient = new RequestClient({ baseURL: apiURL });
+// 业务接口需要完整 Axios 响应，同时也必须携带当前登录令牌。
+export const baseRequestClient = addAuthHeaders(
+  new RequestClient({ baseURL: apiURL }),
+);

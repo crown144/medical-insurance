@@ -6,7 +6,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
 
-from accounts.auth import build_access_token, get_request_profile, profile_payload
+from accounts.auth import build_access_token, get_request_profile, has_portal_access, profile_payload
 from rules.services.agenta_service import AgentAService
 
 
@@ -40,6 +40,8 @@ def auth_login(request):
     user = authenticate(request, username=username, password=password)
     if not user:
         return Response({'message': '用户名或密码错误。'}, status=status.HTTP_401_UNAUTHORIZED)
+    if not has_portal_access(user):
+        return Response({'message': '门户账号无应用访问权限或已过期。'}, status=status.HTTP_403_FORBIDDEN)
     try:
         profile = user.audit_profile
     except Exception:
@@ -80,7 +82,12 @@ def auth_codes(request):
     profile = get_request_profile(request)
     if not profile:
         return Response({'detail': '登录状态无效或已过期。'}, status=status.HTTP_401_UNAUTHORIZED)
-    codes = ['developer:clue-view'] if profile.role == 'developer' else []
+    if profile.role == 'admin':
+        codes = ['role:view', 'role:manage', 'role:grant']
+    elif profile.role == 'developer':
+        codes = ['developer:clue-view']
+    else:
+        codes = []
     return Response({'code': 0, 'result': codes, 'message': 'ok', 'type': 'success'})
 
 

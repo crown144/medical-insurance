@@ -4,6 +4,8 @@ import type {
   TaskListParams,
 } from './model/taskModel';
 
+import { downloadFileFromBlob } from '@vben/utils';
+
 // src/api/task.ts
 import { baseRequestClient, requestClient } from '#/api/request';
 
@@ -64,7 +66,27 @@ export const getFatherChildRulesApi = async (params?: any) => {
   return response.data;
 };
 
-export const getDownloadUrl = (id: number, issueNumber: string) => {
-  const baseUrl = '/api';
-  return `${baseUrl}${Api.Task}${id}/download-report/?issue_number=${issueNumber}`;
+export const downloadTaskReportApi = async (
+  id: number,
+  issueNumber: string | number,
+) => {
+  const response = await baseRequestClient.get(
+    `${Api.Task}${id}/download-report/`,
+    {
+      params: { issue_number: issueNumber },
+      responseType: 'blob',
+    },
+  );
+  const disposition = response.headers['content-disposition'] || '';
+  const encodedName = /filename\*=utf-8''([^;]+)/i.exec(disposition)?.[1];
+  const plainName = /filename="?([^";]+)"?/i.exec(disposition)?.[1];
+  let fileName = plainName || `审核报告_任务${id}.docx`;
+  if (encodedName) {
+    try {
+      fileName = decodeURIComponent(encodedName);
+    } catch {
+      /* 使用默认文件名 */
+    }
+  }
+  downloadFileFromBlob({ source: response.data, fileName });
 };

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 
 import {
@@ -19,6 +19,7 @@ import {
   getTaskResultListApi,
 } from '../../api/result';
 import { executeTaskApi } from '../../api/task';
+import { useTaskAutoRefresh } from './task-auto-refresh';
 
 const route = useRoute();
 const router = useRouter();
@@ -35,11 +36,13 @@ const isDownloadingCases = ref(false);
 const isRecalculating = ref(false);
 const taskStatus = ref('');
 const taskReflection = ref('');
+const lastSyncedAt = ref('');
 const expandedPanels = ref(['reflection']);
 const tableData = ref<any[]>([]);
 const total = ref(0);
 const currentPage = ref(1);
 const pageSize = ref(10);
+let tableRequestId = 0;
 
 const filterForm = reactive({
   hosId: '',
@@ -55,14 +58,18 @@ const fetchTaskInfo = async () => {
     taskName.value = res.data.name;
     taskStatus.value = res.data.status || '';
     taskReflection.value = res.data.self_reflection || '';
+    lastSyncedAt.value = new Date().toLocaleString();
+    return taskStatus.value;
   } catch (error) {
     console.error(error);
+    return undefined;
   }
 };
 
 // --- 核心修改在这里 ---
 const fetchTableData = async () => {
-  if (!taskId.value) return;
+  if (!taskId.value) return false;
+  const requestId = ++tableRequestId;
   isLoading.value = true;
   try {
     const params: any = {
@@ -75,6 +82,8 @@ const fetchTableData = async () => {
     };
 
     const res = await getTaskResultListApi(params);
+    // A search or page change may have started while this request was pending.
+    if (requestId !== tableRequestId) return true;
     const data = res.data;
 
     total.value = data.count || 0;
@@ -133,13 +142,25 @@ const fetchTableData = async () => {
         raw: item,
       };
     });
+    return true;
   } catch (error) {
+    if (requestId !== tableRequestId) return true;
     console.error('加载失败', error);
     ElMessage.error('获取违规数据失败');
+    return false;
   } finally {
-    isLoading.value = false;
+    if (requestId === tableRequestId) isLoading.value = false;
   }
 };
+
+const { isAutoRefreshing, syncTaskState } = useTaskAutoRefresh(async () => {
+  if (!taskId.value) return false;
+  const [status, loadedResults] = await Promise.all([
+    fetchTaskInfo(),
+    fetchTableData(),
+  ]);
+  return !loadedResults || !['completed', 'failed'].includes(status || '');
+});
 
 const handleSearch = () => {
   currentPage.value = 1;
@@ -156,6 +177,12 @@ const handleReset = () => {
 
 const handlePageChange = (val: number) => {
   currentPage.value = val;
+  fetchTableData();
+};
+
+const handleSizeChange = (val: number) => {
+  pageSize.value = val;
+  currentPage.value = 1;
   fetchTableData();
 };
 
@@ -223,12 +250,6 @@ const requestModelRecalculation = async () => {
   }
 };
 
-onMounted(() => {
-  if (taskId.value) {
-    fetchTaskInfo();
-    fetchTableData();
-  }
-});
 </script>
 
 <template>
@@ -296,6 +317,39 @@ onMounted(() => {
             </el-col>
           </el-row>
         </el-form>
+      </div>
+
+      <div class="interaction-card">
+        <div class="interaction-header">
+          <div>
+            <div class="interaction-title">模型互动区</div>
+            <div class="interaction-sub">
+              支持当前任务重新计算与结果自动刷新
+              <span v-if="lastSyncedAt">，最近同步：{{ lastSyncedAt }}</span>
+            </div>
+          </div>
+          <el-tag :type="taskStatus === 'completed' ? 'success' : 'warning'" effect="plain">
+            {{ taskStatus || '未同步' }}
+          </el-tag>
+        </div>
+        <div class="interaction-actions">
+          <el-button
+            class="secondary-action"
+            :loading="isLoading"
+            @click="syncTaskState"
+          >
+            刷新结果
+          </el-button>
+          <el-button
+            class="recalculate-action"
+            :loading="isRecalculating"
+            :disabled="!taskId"
+            @click="requestModelRecalculation"
+          >
+            重新计算当前指标
+          </el-button>
+          <span v-if="isAutoRefreshing" class="interaction-hint">自动刷新中</span>
+        </div>
       </div>
 
       <el-collapse v-model="expandedPanels" class="reflection-panel">
@@ -381,7 +435,7 @@ onMounted(() => {
             :page-sizes="[10, 20, 50]"
             background
             layout="total, sizes, prev, pager, next, jumper"
-            @size-change="handlePageChange"
+            @size-change="handleSizeChange"
             @current-change="handlePageChange"
           />
         </div>
@@ -427,6 +481,40 @@ onMounted(() => {
 }
 .query-card {
   padding-bottom: 14px;
+}
+.interaction-card {
+  background: #f7f9ff;
+  border: 1px solid #e4e9ff;
+  border-radius: 12px;
+  margin-bottom: 12px;
+  padding: 16px;
+}
+.interaction-header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.interaction-title {
+  color: #1f2d3d;
+  font-size: 15px;
+  font-weight: 600;
+}
+.interaction-sub {
+  color: #6b7280;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.interaction-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 12px;
+}
+.interaction-hint {
+  color: #409eff;
+  font-size: 12px;
 }
 .action-group {
   align-items: center;
