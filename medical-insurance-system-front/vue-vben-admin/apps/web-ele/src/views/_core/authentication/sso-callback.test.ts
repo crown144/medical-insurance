@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { resolveSsoCallback } from './sso-callback';
+import {
+  resolveSsoCallback,
+  resolveSsoLogoutCallback,
+  stripSsoCredentials,
+} from './sso-callback';
 
 describe('门户回跳', () => {
   const origin = 'https://insurance.example.test';
@@ -34,11 +38,37 @@ describe('门户回跳', () => {
       '//other.example.test',
       'javascript:alert(1)',
       '/#/oauth/login',
+      '/#/auth/sso',
+      '/#/auth/sso-logout/',
     ]) {
       expect(() => resolveSsoCallback(callback, origin)).toThrow();
     }
     expect(() =>
       resolveSsoCallback('/other/task', origin, '/medical/'),
     ).toThrow();
+  });
+
+  it('移除浏览器地址中的登录凭据并保留其余查询参数', () => {
+    expect(
+      stripSsoCredentials(
+        `${origin}/?ticket=secret&lang=zh#/auth/sso?code=one-time&appid=app&callback=%2Ftask&theme=light`,
+      ),
+    ).toBe(`${origin}/?lang=zh#/auth/sso?theme=light`);
+  });
+
+  it('退出只允许跳转到后端配置的门户', () => {
+    const portal = 'https://portal.example.test/home#/home-page';
+    expect(resolveSsoLogoutCallback('', portal)).toBe(portal);
+    expect(resolveSsoLogoutCallback('/home?loggedOut=1', portal)).toBe(
+      'https://portal.example.test/home?loggedOut=1',
+    );
+    for (const callback of [
+      'https://other.example.test/',
+      'javascript:alert(1)',
+      'https://user:secret@portal.example.test/home',
+    ]) {
+      expect(() => resolveSsoLogoutCallback(callback, portal)).toThrow();
+    }
+    expect(() => resolveSsoLogoutCallback('', '')).toThrow();
   });
 });

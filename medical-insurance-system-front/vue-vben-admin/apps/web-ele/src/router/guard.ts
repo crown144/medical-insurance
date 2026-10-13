@@ -75,7 +75,9 @@ function setupAccessGuard(router: Router) {
         const entry = await portalEntryApi(to.fullPath);
         if (entry.enabled && entry.authorizeUrl) {
           window.location.replace(entry.authorizeUrl);
-          return false;
+          // Keep this navigation pending until CAS replaces the document.
+          // Returning false rolls hash history back and can cancel the redirect.
+          return new Promise<never>(() => {});
         }
       } catch {
         // 门户配置/服务不可用时仍保留本地账号登录入口。

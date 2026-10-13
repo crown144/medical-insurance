@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 
-from . import views
+from . import sso_views, views
 from portal_integration.sso import PortalSsoLoginView
 
 urlpatterns = [
@@ -10,6 +10,8 @@ urlpatterns = [
     path('api/user/info', views.user_info, name='user_info'),
     path('api/auth/login', views.auth_login, name='auth_login'),
     path('api/auth/logout', views.auth_logout, name='auth_logout'),
+    path('api/sso/exchange', sso_views.sso_exchange, name='sso_exchange'),
+    path('api/sso/logout', sso_views.sso_logout, name='sso_logout'),
     path('api/menu/all', views.menu_all, name='menu_all'),
     path('api/auth/codes', views.auth_codes, name='auth_codes'),
     path('api/portal/', include('portal_integration.urls')),

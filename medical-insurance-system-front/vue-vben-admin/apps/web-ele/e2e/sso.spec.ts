@@ -24,6 +24,8 @@ async function mockApis(page: Page, rejectTicket = false) {
         result: {
           enabled: true,
           authorizeUrl: `${origin}/cas/login?callback=${encodeURIComponent(callback)}`,
+          logoutUrl: `${origin}/cas/logout`,
+          portalHomeUrl: `${origin}/portal-home`,
         },
       };
     } else if (url.pathname === '/api/sso/login') {
@@ -89,6 +91,12 @@ async function mockApis(page: Page, rejectTicket = false) {
       headers: { Location: `${origin}/#/oauth/login?${params}` },
     });
   });
+  await page.route('**/cas/logout', (route) =>
+    route.fulfill({ status: 200, body: 'CAS logout complete' }),
+  );
+  await page.route('**/portal-home', (route) =>
+    route.fulfill({ status: 200, body: 'Portal home' }),
+  );
   return requests;
 }
 
@@ -132,6 +140,76 @@ test('后端 302 交换码也能建立医保登录态', async ({ page }) => {
   });
 });
 
+test('兼容集成分支 SSO 地址并在交换前移除登录凭据', async ({ page }) => {
+  const requests = await mockApis(page);
+  await page.goto('/#/auth/sso?code=single-use-code');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  expect(requests.find((r) => r.path === '/api/sso/login')?.body).toEqual({
+    code: 'single-use-code',
+  });
+  expect(page.url()).not.toContain('single-use-code');
+});
+
+test('退出时先清除医保会话再跳转配置的 CAS 地址', async ({ page }) => {
+  const requests = await mockApis(page);
+  await page.goto('/#/oauth/login?code=single-use-code');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await expect(page).toHaveURL(`${origin}/cas/logout`);
+  expect(
+    requests.find((r) => r.path === '/api/auth/logout')?.authorization,
+  ).toBe(`Bearer ${token}`);
+  const loginRequests = requests.filter(
+    (r) => r.path === '/api/sso/login',
+  ).length;
+  await page.goto('/#/task/manage/execution');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  expect(requests.filter((r) => r.path === '/api/sso/login')).toHaveLength(
+    loginRequests + 1,
+  );
+});
+
+test('门户退出回调清理当前会话并拒绝外站回跳', async ({ page }) => {
+  const requests = await mockApis(page);
+  await page.goto('/#/oauth/login?code=single-use-code');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  await page.goto('/#/auth/sso-logout?callback=https%3A%2F%2Fevil.example%2F');
+  await expect(page).toHaveURL(/#\/auth\/login$/);
+  const loginRequests = requests.filter(
+    (r) => r.path === '/api/sso/login',
+  ).length;
+  await page.goto('/#/task/manage/execution');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  expect(requests.filter((r) => r.path === '/api/sso/login')).toHaveLength(
+    loginRequests + 1,
+  );
+});
+
+test('门户退出回调支持配置的门户首页', async ({ page }) => {
+  await mockApis(page);
+  await page.goto('/#/oauth/login?code=single-use-code');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  await page.goto(
+    `/#/auth/sso-logout?callback=${encodeURIComponent(`${origin}/portal-home`)}`,
+  );
+  await expect(page).toHaveURL(`${origin}/portal-home`);
+});
+
+test('未配置门户时本地退出仍然可用', async ({ page }) => {
+  await mockApis(page);
+  await page.goto('/#/oauth/login?code=single-use-code');
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  await page.route('**/api/portal/sso/config?**', (route) =>
+    route.fulfill({
+      json: { code: 0, result: { enabled: false, authorizeUrl: '' } },
+    }),
+  );
+  await page.getByRole('button', { name: '退出登录', exact: true }).click();
+  await expect(page).toHaveURL(/#\/auth\/login$/);
+  await page.goto('/#/task/manage/execution');
+  await expect(page).toHaveURL(/#\/auth\/login\?redirect=/);
+});
+
 test('无效 ticket 显示错误并停止，不进入业务页或循环登录', async ({ page }) => {
   const requests = await mockApis(page, true);
   await page.goto('/#/oauth/login?ticket=expired&appid=test-app');
@@ -139,4 +217,5 @@ test('无效 ticket 显示错误并停止，不进入业务页或循环登录', 
     page.getByText('门户登录凭据无效或已过期', { exact: true }),
   ).toBeVisible();
   expect(requests.filter((r) => r.path === '/api/tasks/')).toHaveLength(0);
+  expect(page.url()).not.toContain('ticket=');
 });

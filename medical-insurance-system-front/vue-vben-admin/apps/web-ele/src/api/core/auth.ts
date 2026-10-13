@@ -35,11 +35,18 @@ export async function portalLoginApi(data: PortalLoginParams) {
   return baseRequestClient.post<any>('/sso/login', data);
 }
 
+export interface PortalSsoConfig {
+  authorizeUrl: string;
+  enabled: boolean;
+  logoutUrl?: string;
+  portalHomeUrl?: string;
+}
+
 export async function portalEntryApi(callback: string) {
   const response = await baseRequestClient.get('/portal/sso/config', {
     params: { callback },
   });
-  return response.data.result as { authorizeUrl: string; enabled: boolean };
+  return response.data.result as PortalSsoConfig;
 }
 
 export async function refreshTokenApi() {

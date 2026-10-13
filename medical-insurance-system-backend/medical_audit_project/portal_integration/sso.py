@@ -13,6 +13,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.auth import build_access_token, has_portal_access, profile_payload
+from medical_audit_project.sso import logout_config
 from .models import PortalLoginCode
 from .services.exceptions import PortalClientError, PortalIntegrationError, PortalProtocolError
 from .services.portal_client import PortalClient
@@ -86,13 +87,13 @@ class PortalSsoEntryView(APIView):
     redirect_browser = False
 
     def get(self, request):
-        if not settings.PORTAL_CAS_LOGIN_URL and not self.redirect_browser:
-            return Response({'code': 0, 'result': {'enabled': False, 'authorizeUrl': ''}})
         try:
+            if not settings.PORTAL_CAS_LOGIN_URL and not self.redirect_browser:
+                return Response({'code': 0, 'result': {'enabled': False, 'authorizeUrl': '', **logout_config()}}, headers={'Cache-Control': 'no-store'})
             url = authorization_url(request.query_params.get('callback', ''))
             if self.redirect_browser:
                 return HttpResponseRedirect(url)
-            return Response({'code': 0, 'result': {'enabled': True, 'authorizeUrl': url}}, headers={'Cache-Control': 'no-store'})
+            return Response({'code': 0, 'result': {'enabled': True, 'authorizeUrl': url, **logout_config()}}, headers={'Cache-Control': 'no-store'})
         except PortalIntegrationError as exc:
             return error_response(exc)
 
@@ -120,6 +121,11 @@ def error_response(exc):
 class PortalSsoLoginView(APIView):
     permission_classes = [AllowAny]
     authentication_classes = []
+
+    def get(self, request):
+        # jicheng registered /api/sso/login as the server callback. Reuse the
+        # same verified identity and single-use handoff as /portal/sso/callback.
+        return PortalSsoCallbackView().get(request)
 
     def post(self, request):
         serializer = LoginInput(data=request.data)

@@ -1,5 +1,8 @@
 import hashlib
 from io import BytesIO
+import os
+from pathlib import Path
+import runpy
 import time
 from datetime import timedelta
 from urllib.parse import parse_qs, urlsplit
@@ -148,11 +151,43 @@ class SsoFlowTests(APITestCase):
         self.assertEqual(self.client.post('/api/sso/login', {'code': code}, format='json').status_code, 401)
         validate.assert_called_once()
 
+    @patch('portal_integration.services.portal_client.PortalClient.validate_ticket', return_value=CALLBACK_DETAIL)
+    def test_legacy_get_login_uses_same_binding_and_single_use_exchange(self, validate):
+        response = self.client.get('/api/sso/login', {
+            'ticket': 'ST-legacy', 'appid': 'test-app', 'callback': '/task/execution',
+        })
+        self.assertEqual(response.status_code, 302)
+        params = parse_qs(urlsplit(response.url).fragment.split('?', 1)[1])
+        self.assertEqual(params['callback'], ['/task/execution'])
+        self.assertEqual(PortalUserBinding.objects.get().portal_user_id, CALLBACK_DETAIL['id'])
+        code = params['code'][0]
+        self.assertEqual(self.client.post('/api/sso/login', {'code': code}, format='json').status_code, 200)
+        self.assertEqual(self.client.post('/api/sso/login', {'code': code}, format='json').status_code, 401)
+        validate.assert_called_once_with('ST-legacy', 'test-app')
+
+    @patch('portal_integration.services.portal_client.PortalClient.validate_ticket')
+    def test_legacy_get_login_cannot_restore_removed_or_expired_access(self, validate):
+        binding = PortalUserSyncService().sync_detail(CALLBACK_DETAIL)
+        for access, detail in [
+            ('DISABLED', CALLBACK_DETAIL),
+            ('REMOVED', CALLBACK_DETAIL),
+            ('ENABLED', {**CALLBACK_DETAIL, 'expired': int(time.time()) - 5}),
+            ('ENABLED', {**CALLBACK_DETAIL, 'status': 2}),
+        ]:
+            with self.subTest(access=access, detail=detail):
+                binding.access_status = access
+                binding.save(update_fields=['access_status'])
+                validate.return_value = detail
+                response = self.client.get('/api/sso/login', {'ticket': 'ST-1', 'appid': 'test-app'})
+                self.assertEqual(response.status_code, 403)
+                self.assertFalse(PortalLoginCode.objects.exists())
+
     @patch('portal_integration.services.portal_client.PortalClient.validate_ticket')
     def test_bad_callback_is_rejected_before_ticket_exchange(self, validate):
-        for callback in ['https://other.example.test/#/task', '//other.example.test', 'javascript:alert(1)']:
-            response = self.client.get('/api/portal/sso/callback', {'ticket': 'ST-1', 'appid': 'test-app', 'callback': callback})
-            self.assertEqual(response.status_code, 401)
+        for endpoint in ['/api/portal/sso/callback', '/api/sso/login']:
+            for callback in ['https://other.example.test/#/task', '//other.example.test', 'javascript:alert(1)']:
+                response = self.client.get(endpoint, {'ticket': 'ST-1', 'appid': 'test-app', 'callback': callback})
+                self.assertEqual(response.status_code, 401)
         validate.assert_not_called()
 
     def test_expired_handoff_and_missing_parameters_are_rejected(self):
@@ -189,3 +224,97 @@ class SsoEntryTests(APITestCase):
     @override_settings(PORTAL_LOGIN_CALLBACK_URL='')
     def test_incomplete_deployment_reports_configuration_failure(self):
         self.assertEqual(self.client.get('/api/portal/sso/start').status_code, 503)
+
+
+@override_settings(
+    PORTAL_APP_ID='test-app', PORTAL_FRONTEND_URL='https://insurance.example.test/medical',
+    PORTAL_CAS_LOGIN_URL='', SSO_CAS_LOGOUT_URL='https://portal.example.test/cas/logout?lang=zh&service=old',
+    PORTAL_LOGIN_CALLBACK_URL='https://insurance.example.test/api/sso/login',
+    SSO_LOGOUT_CALLBACK_URL='https://insurance.example.test/api/sso/logout',
+    SSO_LOGOUT_SERVICE_URL='',
+    SSO_PORTAL_HOME_URL='https://portal.example.test/home/%E6%97%A0#/home-page',
+)
+class SsoLogoutTests(APITestCase):
+    callback = 'https://portal.example.test/home/%E6%97%A0#/home-page'
+
+    def test_config_preserves_registered_login_service_for_logout(self):
+        response = self.client.get('/api/portal/sso/config')
+        self.assertEqual(response.status_code, 200)
+        config = response.data['result']
+        self.assertFalse(config['enabled'])
+        self.assertEqual(config['portalHomeUrl'], self.callback)
+        query = parse_qs(urlsplit(config['logoutUrl']).query)
+        self.assertEqual(query['service'], ['https://insurance.example.test/api/sso/login'])
+        self.assertEqual(query['callback'], [self.callback])
+        self.assertEqual(query['lang'], ['zh'])
+
+    @override_settings(SSO_LOGOUT_SERVICE_URL='https://insurance.example.test/api/sso/logout')
+    def test_logout_service_can_be_overridden_for_other_portal_deployments(self):
+        config = self.client.get('/api/portal/sso/config').data['result']
+        query = parse_qs(urlsplit(config['logoutUrl']).query)
+        self.assertEqual(query['service'], ['https://insurance.example.test/api/sso/logout'])
+
+    @override_settings(PORTAL_LOGIN_CALLBACK_URL='https://insurance.example.test/#/oauth/login')
+    def test_logout_preserves_frontend_login_callback_fragment(self):
+        config = self.client.get('/api/portal/sso/config').data['result']
+        query = parse_qs(urlsplit(config['logoutUrl']).query)
+        self.assertEqual(query['service'], ['https://insurance.example.test/#/oauth/login'])
+
+    def test_logout_callback_without_token_redirects_browser_to_clear_session(self):
+        response = self.client.get('/api/sso/logout', {
+            'status': 'server_logout', 'appid': 'test-app', 'callback': self.callback,
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(response.url.startswith('https://insurance.example.test/medical/#/auth/sso-logout?'))
+        self.assertEqual(parse_qs(urlsplit(response.url).fragment.split('?', 1)[1])['callback'], [self.callback])
+        self.assertEqual(response['Cache-Control'], 'no-store')
+
+    def test_logout_rejects_wrong_app_status_and_external_callback(self):
+        valid = {'status': 'server_logout', 'appid': 'test-app', 'callback': self.callback}
+        for invalid in [
+            {'appid': 'other'}, {'status': 'login'}, {'callback': ''},
+            {'callback': 'https://attacker.example.test'},
+            {'callback': 'https://portal.example.test/another-page'},
+        ]:
+            with self.subTest(invalid=invalid):
+                response = self.client.get('/api/sso/logout', {**valid, **invalid})
+                self.assertEqual(response.status_code, 401)
+                self.assertNotIn('Location', response)
+
+    @override_settings(SSO_LOGOUT_CALLBACK_URL='')
+    def test_incomplete_logout_keeps_local_fallback(self):
+        config = self.client.get('/api/portal/sso/config').data['result']
+        self.assertEqual(config['logoutUrl'], '')
+        self.assertEqual(config['portalHomeUrl'], '')
+
+    def test_legacy_exchange_is_explicitly_deprecated_without_authentication(self):
+        self.assertEqual(self.client.get('/api/sso/exchange').status_code, 410)
+
+
+class SsoSettingsCompatibilityTests(SimpleTestCase):
+    def load_settings(self, env):
+        settings_path = Path(__file__).parents[2] / 'medical_audit_project' / 'settings.py'
+        with patch.dict(os.environ, env, clear=True):
+            return runpy.run_path(str(settings_path))
+
+    def test_legacy_environment_configures_canonical_portal_client(self):
+        config = self.load_settings({
+            'SSO_APP_ID': 'legacy-app', 'SSO_APP_BASE_URL': 'https://insurance.example.test/medical',
+            'SSO_SERVICE_VALIDATE_URL': 'https://portal.example.test/custom/cas/serviceValidate',
+            'SSO_LOGIN_CALLBACK_URL': 'https://insurance.example.test/api/sso/login',
+            'SSO_HTTP_TIMEOUT_SECONDS': '6',
+        })
+        self.assertEqual(config['PORTAL_APP_ID'], 'legacy-app')
+        self.assertEqual(config['PORTAL_FRONTEND_URL'], 'https://insurance.example.test/medical')
+        self.assertEqual(config['PORTAL_BASE_URL'], 'https://portal.example.test')
+        self.assertEqual(config['PORTAL_SSO_VALIDATE_PATH'], '/custom/cas/serviceValidate')
+        self.assertEqual(config['PORTAL_LOGIN_CALLBACK_URL'], 'https://insurance.example.test/api/sso/login')
+        self.assertEqual(config['PORTAL_REQUEST_TIMEOUT_SECONDS'], 6)
+
+    def test_explicit_portal_values_take_precedence_and_local_defaults_are_empty(self):
+        config = self.load_settings({'PORTAL_APP_ID': 'current-app', 'SSO_APP_ID': 'legacy-app'})
+        self.assertEqual(config['PORTAL_APP_ID'], 'current-app')
+        config = self.load_settings({})
+        for key in ['PORTAL_APP_ID', 'PORTAL_BASE_URL', 'PORTAL_FRONTEND_URL', 'SSO_CAS_LOGOUT_URL', 'SSO_PORTAL_HOME_URL']:
+            with self.subTest(key=key):
+                self.assertEqual(config[key], '')

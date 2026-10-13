@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router';
 import { LOGIN_PATH } from '@vben/constants';
 import { preferences } from '@vben/preferences';
 import { useAuthStore } from '#/store';
-import { resolveSsoCallback } from './sso-callback';
+import { resolveSsoCallback, stripSsoCredentials } from './sso-callback';
 
 const route = useRoute();
 const router = useRouter();
@@ -16,16 +16,23 @@ function queryString(value: unknown): string {
 }
 
 onMounted(async () => {
+  const query = { ...route.query };
+  window.history.replaceState(
+    window.history.state,
+    '',
+    stripSsoCredentials(window.location.href),
+  );
+  authStore.clearLoginState();
   try {
     // Vue Router 已解码 query；不要二次 decodeURIComponent 破坏回跳查询参数。
     const callback = resolveSsoCallback(
-      queryString(route.query.callback),
+      queryString(query.callback),
       window.location.origin,
       import.meta.env.BASE_URL,
     );
-    const code = queryString(route.query.code);
-    const ticket = queryString(route.query.ticket);
-    const appid = queryString(route.query.appid);
+    const code = queryString(query.code);
+    const ticket = queryString(query.ticket);
+    const appid = queryString(query.appid);
     if (!code && (!ticket || !appid))
       throw new Error('缺少门户登录凭据，请从统一门户重新进入');
     const user = await authStore.ssoLogin(code ? { code } : { ticket, appid });

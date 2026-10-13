@@ -16,6 +16,7 @@ import {
   loginApi,
   logoutApi,
   portalLoginApi,
+  portalEntryApi,
 } from '#/api';
 import type { PortalLoginParams } from '#/api/core/auth';
 import { $t } from '#/locales';
@@ -114,6 +115,16 @@ export const useAuthStore = defineStore('auth', () => {
     });
   }
 
+  async function logoutWithSso() {
+    // 门户地址由后端配置；本地账号部署仍可正常退出。
+    const configPromise = portalEntryApi('').catch(() => null);
+    await logout(false);
+    const config = await configPromise;
+    if (config?.logoutUrl) {
+      window.location.replace(config.logoutUrl);
+    }
+  }
+
   async function fetchUserInfo(): Promise<UserInfo> {
     const userInfo = await getUserInfoApi();
     if (!userInfo || !Array.isArray(userInfo.roles)) {
@@ -134,6 +145,7 @@ export const useAuthStore = defineStore('auth', () => {
     fetchUserInfo,
     loginLoading,
     logout,
+    logoutWithSso,
     ssoLogin,
   };
 });

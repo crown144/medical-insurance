@@ -1,6 +1,6 @@
 # 统一门户用户权限集成
 
-实现《统一门户接入说明文档 v1.9》3.3.1 / 3.4 的门户单点登录，以及 3.6 定义的全部 8 个用户权限回调，使用 Django ORM、事务和行锁。门户 iframe 角色管理页面和统一退出仍未实现。
+实现《统一门户接入说明文档 v1.9》3.3.1 / 3.4 的门户单点登录、浏览器统一退出，以及 3.6 定义的全部 8 个用户权限回调，使用 Django ORM、事务和行锁。门户 iframe 角色管理页面仍未实现。
 
 ## 门户登录与前端请求
 
@@ -9,6 +9,8 @@
 1. 按文档示例填写 `https://医保前端地址/#/oauth/login`。前端读取 `ticket`、`appid`、`callback`，调用 `POST /api/sso/login`；后端验证门户身份、同步本地账号并签发医保访问令牌。前端存储令牌、加载用户/权限后跳转原 `callback`，无回跳时进入任务列表。
 2. 需要服务器 HTTP 302 回调时填写 `https://医保后端地址/api/portal/sso/callback`。配置 `PORTAL_FRONTEND_URL=https://医保前端地址`（部署子目录时包含子目录，不含 `#`）。后端校验 ticket 后，通过 302 跳到前端 `/oauth/login`，以两分钟有效、仅可消费一次的数据库交换码完成登录。数据库存储可跨多个 Django worker 工作；交换码不是长期访问令牌。
 
+兼容 jicheng 现有注册地址：`GET /api/sso/login` 使用上述同一后端回调流程，`/#/auth/sso` 与 `/#/oauth/login` 使用同一前端登录页。`POST /api/sso/login` 保持原 JSON 接口。所有入口统一校验门户 ID、用户有效期和应用权限；不再存在仅按用户名创建账号的独立登录路径。旧 `GET /api/sso/exchange` 明确返回 410。
+
 3.1 的未登录应用入口也已实现：配置 `PORTAL_CAS_LOGIN_URL` 为门户团队提供的 CAS 登录服务地址，`PORTAL_LOGIN_CALLBACK_URL` 为已注册的完整 `login_callback`，以及 `PORTAL_FRONTEND_URL`。前端发现没有本地令牌时查询 `GET /api/portal/sso/config?callback=...` 并跳转 CAS，携带匹配注册值的 `service` 和实际访问页 `callback`。也可直接用 `GET /api/portal/sso/start` 发起 HTTP 302 登录。未配置 CAS 地址时默认保留本地登录，直接进入 `/auth/login` 也可使用本地账号。登录服务地址不能根据登出地址猜测，应向门户确认。
 
 `POST /api/sso/login` 的 JSON 请求为 `{"ticket":"ST-...","appid":"..."}`，或后端 302 回调发的 `{"code":"..."}`，不可混用。成功响应沿用本系统 `{code:0,result:{accessToken,token,username,roles,...}}`，与本地 `/api/auth/login` 相同。门户 ticket 只用于身份校验，不作为业务访问令牌。用户身份来自后端对门户的请求，不能由浏览器指定。
@@ -16,6 +18,8 @@
 严格使用 3.4 的 `GET /api/security-manage-permission/app/cas/serviceValidate`，`ticket` 和 `appid` 放 query，`Content-Type: application/json`，响应为明文且成功 code 为整数 0；与权限回调的 SM2 加密无关。文档响应字段表包含 `expired`，示例却遗漏；实际响应遗漏时，补查 3.7.1 加密用户详情并验证，不能将缺失有效期当成永不过期。这种部署仍需配置真实门户/应用密钥。appid 必须匹配已注册应用。
 
 首次门户登录创建 normal 账号，密码设为不可用；已绑定用户沿用原角色及密码。新登录不能恢复已停用或移除的应用权限，门户全局禁用及过期账号也不签发令牌。本地用户名/密码登录保留。
+
+统一退出配置 `SSO_CAS_LOGOUT_URL`、`SSO_LOGOUT_CALLBACK_URL` 和 `SSO_PORTAL_HOME_URL`，并配置应用 ID、医保前端地址及已注册登录回调。`GET /api/portal/sso/config` 返回 `logoutUrl` 和 `portalHomeUrl`；退出 URL 的 `service` 默认保持 jicheng 行为，使用已注册的登录回调 `PORTAL_LOGIN_CALLBACK_URL`。如果门户部署要求其他 service（例如退出回调），通过 `SSO_LOGOUT_SERVICE_URL` 显式覆盖；此差异需与真实门户确认。CAS 地址原有的其他查询参数会保留。浏览器到达 `GET /api/sso/logout?status=server_logout&appid=...&callback=...` 时，后端校验应用 ID、状态和配置的门户首页，再 302 到 `/#/auth/sso-logout` 清理前端状态。未配置退出服务时，退出保留本地登录页回退，不能跳转到其他环境的硬编码门户地址。退出回调无需医保 token；停用、移除和过期仍会即时阻断原 token。普通浏览器退出清理本地令牌，不增加服务端令牌撤销机制，已复制的有效令牌仍受其有效期和账号状态限制。
 
 web-ele 两个请求客户端都携带 `Authorization: Bearer <token>` 和文档约定的 `accessToken: <token>`；后端支持这两种头，优先取 Authorization。保留原有 Axios 完整响应和 result 解包两种返回行为。报告下载改成携带令牌获取 Blob 后保存，支持服务端中文文件名。生产默认 API 为 `/api`；部署时反向代理 `/api` 到 Django。开发模拟接口关闭。
 
@@ -73,6 +77,12 @@ web-ele 两个请求客户端都携带 `Authorization: Bearer <token>` 和文档
 | `PORTAL_PUBLIC_KEY` | 门户 SM2 公钥 |
 | `PORTAL_APP_PUBLIC_KEY` | 应用 SM2 公钥 |
 | `PORTAL_APP_PRIVATE_KEY` | 应用 SM2 私钥 |
+| `SSO_CAS_LOGOUT_URL` | 门户提供的 CAS 退出服务完整地址 |
+| `SSO_LOGOUT_CALLBACK_URL` | 已注册的完整退出回调，例如 `https://医保后端地址/api/sso/logout` |
+| `SSO_LOGOUT_SERVICE_URL` | 可选的退出请求 service 覆盖值；默认使用已注册登录回调，保持 jicheng 行为 |
+| `SSO_PORTAL_HOME_URL` | 退出后返回的完整门户首页 URL，允许包含 `#` |
+
+jicheng 环境变量继续兼容：`SSO_APP_ID` → `PORTAL_APP_ID`、`SSO_APP_BASE_URL` → `PORTAL_FRONTEND_URL`、`SSO_LOGIN_CALLBACK_URL` → `PORTAL_LOGIN_CALLBACK_URL`、`SSO_HTTP_TIMEOUT_SECONDS` → `PORTAL_REQUEST_TIMEOUT_SECONDS`。`SSO_SERVICE_VALIDATE_URL` 的协议/主机和路径分别作为 `PORTAL_BASE_URL` 与 `PORTAL_SSO_VALIDATE_PATH` 的默认值；显式设置的 `PORTAL_*` 优先。主机、应用 ID 和退出 URL 默认均为空，部署时必须填写实际值，不能依赖 jicheng 曾经写入源码的内网地址。应用回跳地址按医保前端同源校验，旧 `SSO_ALLOWED_CALLBACK_HOSTS` 不再放宽此限制；数据库单次交换码替代旧签名 handoff cookie 配置。
 
 v1.9 允许将注册的 action 配置为明文，但本实现默认拒绝未验签的权限请求。明文仅允许显式开启的开发环境；生产应设置 `PORTAL_ENCRYPT_ENABLED=true`、`PORTAL_ALLOW_PLAINTEXT=false`，并在门户同步开启所有回调的加密。
 
@@ -91,7 +101,7 @@ python manage.py migrate
 
 生产须启用 `accounts.middleware.ApiAccessMiddleware`，设置 `DJANGO_DEBUG=false` 和独立随机的 `DJANGO_SECRET_KEY`；使用仓库公开的开发密钥会拒绝启动。使用外部部署 settings 时，应核对最终中间件及环境变量。
 
-业务 `/api/` 请求统一校验 token、账号状态和门户有效期。例外为本地登录/退出、门户登录 `/api/sso/login`、空菜单健康探测 `/api/menu/all`、独立验签或校验门户 ticket 的 `/api/portal/` 和 OPTIONS。未绑定门户的本地账号仍可登录。
+业务 `/api/` 请求统一校验 token、账号状态和门户有效期。例外为本地登录/退出、门户登录/退出 `/api/sso/login` 与 `/api/sso/logout`、返回 410 的 `/api/sso/exchange`、空菜单健康探测 `/api/menu/all`、独立验签或校验门户 ticket 的 `/api/portal/` 和 OPTIONS。未绑定门户的本地账号仍可登录。
 
 迁移 `0002_restore_expiration` 从历史 profile_data 恢复有效期，不覆盖已有值。异常资料会停止迁移并指出绑定主键。原代码未保存的 `expired` 无法凭空恢复；上线前必须让门户补发这些用户的修改通知或重新核对其真实有效期，不能将缺失资料直接视为无限期。
 
@@ -123,6 +133,8 @@ pnpm exec playwright test --config apps/web-ele/playwright.sso.config.ts
 
 2026-10-09 登录桥接验证：后端完整 129 项、前端 Vitest 10 项、Playwright 浏览器 3 项全部通过；`pnpm run build:ele` 生产打包成功，迁移检查无遗漏。包含真实 Word 生成接口测试，但门户、数据源和队列仍为本地隔离测试。完整前端类型检查仍失败：相同锁文件及依赖下，改动前 90 条、改动后 87 条，没有新增诊断；其余错误涉及原有业务页和组件库，未在本次登录接入中扩改。
 
+2026-10-13 将 `jicheng`（`3ba499a`）合入 `zzttest`（`36fd496`）验证：后端上述五个测试模块 135 项、前端 Vitest 20 项、Playwright 浏览器 8 项和源码打包脚本 2 项全部通过；web-ele Vite 生产构建成功，Django 配置及迁移检查通过。前端类型检查与合并前使用相同依赖对比，仍为原有 87 条诊断，没有新增。浏览器新增覆盖旧 SSO 地址、退出后重新进入应用、非法退出回跳及未配置门户时的本地退出。修复结果页并发刷新/缓存页生命周期、分页条数切换、源码包遗漏门户服务模块及 PostCSS 插件解析问题。门户、模型服务和 MySQL/Celery 仍需实际环境联调；分支自带 ZIP/SQL 保留为历史快照，本次没有重制生产部署包。
+
 文档附录 1 的请求签名可以验证、响应密文可以正确解密；其响应签名与附带密文及平台公钥不匹配，Python 与 Bouncy Castle 均拒绝它。真实联调应使用门户实际发出的成对报文，不能据此关闭验签。
 
 ## 验收范围与剩余工作
@@ -130,6 +142,6 @@ pnpm exec playwright test --config apps/web-ele/playwright.sso.config.ts
 - 尚无真实门户环境联调；需要注册本表中的全部回调，并验证真实密钥、路径、请求和重试行为。已有账号的历史有效期需核对。
 - 文档未规定 action、应用标识、时间戳或 nonce 的签名绑定及重放校验。当前遵循文档，不擅自新增必填字段。指纹和 X-Trace-Id 仅作审计；跨动作复用合法报文的风险仍需与门户共同确定防护协议，并限制接口网络访问范围。
 - 《三方应用接入说明》是阶段说明，部分章节号与 v1.9 不同；详细协议以 v1.9 为准。《角色管理与权限授权》描述 FastAPI `/v2/rbac`、accessToken 头和细粒度角色模型，与本仓库 Django API 不一致，不能直接把它当作当前医保已有接口。
-- SSO 回调与 ticket 交换已实现。统一退出和 iframe 角色/用户授权页面仍需单独实现；SSO 登录与 8 个回调不等于完整统一门户接入。
+- SSO 回调、ticket 交换和浏览器统一退出已实现；真实门户退出跳转仍需联调。iframe 角色/用户授权页面和服务端令牌撤销仍未实现；SSO 登录与 8 个回调不等于完整统一门户接入。
 - SQLite 测试不验证 MySQL 行锁、死锁与并发竞争，需在隔离的生产同版本 MySQL 中验收。
 - 尚未构建 Linux ARM64 生产镜像。交接脚本引用的外部 Dockerfile、部署 settings 和 Compose 不在仓库中。原 requirements.txt 中 `tensorflow-io-gcs-filesystem==0.31.0` 没有 Python 3.12 安装包，生产完整依赖需按实际 Python 和 ARM64 环境核对。

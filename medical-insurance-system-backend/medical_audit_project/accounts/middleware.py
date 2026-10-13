@@ -12,6 +12,8 @@ class ApiAccessMiddleware:
         '/api/auth/login',
         '/api/auth/logout',
         '/api/sso/login',
+        '/api/sso/logout',
+        '/api/sso/exchange',
         # Deployment readiness checks use this empty-menu response.
         '/api/menu/all',
     }
