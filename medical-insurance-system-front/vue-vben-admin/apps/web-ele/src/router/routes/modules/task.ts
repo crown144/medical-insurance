@@ -12,6 +12,7 @@ const task: RouteRecordRaw = {
     title: 'Task Execution',
     icon: 'mdi:clipboard-text-outline',
     order: 20,
+    hideChildrenInMenu: true,
   },
   redirect: '/task/manage/execution',
   children: [

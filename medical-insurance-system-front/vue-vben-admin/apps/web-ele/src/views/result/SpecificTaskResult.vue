@@ -80,6 +80,9 @@ const fetchTableData = async () => {
             detailObj.item_name ||
             detailObj.xmname ||
             detailObj.xmmc ||
+            detailObj['药品通用名'] ||
+            detailObj['药物名称'] ||
+            detailObj['药品名称'] ||
             detailObj['收费项目名称'] ||
             detailObj['收费项目代码'] ||
             '';
@@ -97,7 +100,8 @@ const fetchTableData = async () => {
           finalItemName = item.violation_item;
         } else {
           // 兜底：使用规则中的名称
-          finalItemName = item.rule?.drug_name || 'Unknown Item';
+          finalItemName =
+            item.rule?.drugName || item.rule?.drug_name || 'Unknown Item';
         }
       }
 

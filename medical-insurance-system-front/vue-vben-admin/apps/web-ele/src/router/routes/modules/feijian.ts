@@ -10,6 +10,7 @@ const feijian: RouteRecordRaw = {
     title: 'Inspection Comparison',
     icon: 'mdi:file-search-outline',
     order: 30,
+    hideChildrenInMenu: true,
   },
   redirect: '/feijian/manage',
   children: [
@@ -18,8 +19,8 @@ const feijian: RouteRecordRaw = {
       name: 'FeiJianManage',
       component: () => import('#/views/feijian/manage/index.vue'),
       meta: {
-        title: 'Inspection Result Alignment',
-        icon: 'mdi:clipboard-check-outline',
+        title: 'Inspection Comparison',
+        hideInMenu: true,
         keepAlive: false,
       },
     },

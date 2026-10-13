@@ -1,16 +1,23 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 
+import type { RuleGenerateResult } from '#/api/rule';
+
 import { CopyDocument, RefreshRight } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 
-import { generateRuleApi, getRuleList, updateRule } from '#/api/rule';
+import {
+  generateRuleApi,
+  getRuleList,
+  updateRule,
+  validateRuleCodeApi,
+} from '#/api/rule';
 import {
   filterCompileRules,
-  getBilingualRuleName,
-  getBilingualRuleTypeLabel,
   getDisplayRuleId,
   getRuleDescriptionEnglish,
+  getRuleNameEnglish,
+  getRuleTypeLabel,
 } from '#/config/rule-type';
 
 type RuleListItem = {
@@ -36,6 +43,7 @@ const currentPage = ref(1);
 const pageSize = ref(10);
 const selectedRuleId = ref<number | string | null>(null);
 const generatedCode = ref('');
+const compilationResult = ref<RuleGenerateResult | null>(null);
 
 const searchForm = reactive({
   keyword: '',
@@ -62,13 +70,26 @@ const canSave = computed(() => {
 
 const resetCompileState = () => {
   generatedCode.value = '';
+  compilationResult.value = null;
   compiledReady.value = false;
 };
 
-const buildCompileInput = (rule: RuleListItem) => {
-  return [`规则名称：${rule.drugName.trim()}`, `规则描述：${rule.description.trim()}`].join(
-    '\n',
-  );
+const displayIrr = computed(() => {
+  if (!selectedRule.value) return null;
+  return {
+    ruleCategory: getRuleTypeLabel(selectedRule.value.type) || 'Translation unavailable',
+    constraintObject:
+      getRuleNameEnglish(selectedRule.value.drugName) || 'Translation unavailable',
+    constraintCondition:
+      getRuleDescriptionEnglish(selectedRule.value.description) ||
+      'Translation unavailable',
+  };
+});
+
+const formatParameters = (parameters: Record<string, any>) => {
+  return Object.entries(parameters || {})
+    .map(([key, value]) => `${key}: ${Array.isArray(value) ? value.join(', ') : value}`)
+    .join('; ');
 };
 
 const getErrorMessage = (error: any, fallback: string) => {
@@ -177,10 +198,12 @@ const handleCompile = async () => {
   compiling.value = true;
   resetCompileState();
   try {
-    const result = await generateRuleApi(buildCompileInput(selectedRule.value));
+    const result = await generateRuleApi(selectedRule.value.id);
+    compilationResult.value = result;
     const nextCode = result?.generated_code || '';
     if (!nextCode.trim()) {
-      ElMessage.error('The compilation result is empty');
+      const validationError = result?.validation?.errors?.join('; ');
+      ElMessage.error(validationError || 'The compilation result is empty');
       return;
     }
     generatedCode.value = nextCode;
@@ -208,19 +231,25 @@ const handleCopy = async () => {
   }
 };
 
-const handleTest = async () => {
+const handleValidate = async () => {
   if (!generatedCode.value.trim()) {
-    ElMessage.warning('Please generate code before running the test');
+    ElMessage.warning('Please generate code before validation');
     return;
   }
 
   testing.value = true;
   try {
-    await new Promise((resolve) => setTimeout(resolve, 3000));
-    await ElMessageBox.alert('Test passed', 'Test Result', {
+    const validation = await validateRuleCodeApi(generatedCode.value);
+    const valid = Boolean(validation?.valid);
+    const message = valid
+      ? 'The generated program is valid.'
+      : validation?.errors?.join('\n') || 'Program validation failed.';
+    await ElMessageBox.alert(message, 'Program Validation', {
       confirmButtonText: 'OK',
-      type: 'success',
+      type: valid ? 'success' : 'error',
     });
+  } catch (error) {
+    ElMessage.error(getErrorMessage(error, 'Program validation failed'));
   } finally {
     testing.value = false;
   }
@@ -238,17 +267,25 @@ const handleSave = async () => {
 
   saving.value = true;
   try {
-    await updateRule(selectedRule.value.id, {
-      drug_name: selectedRule.value.drugName,
-      ruleId: selectedRule.value.ruleId,
-      type: selectedRule.value.type,
-      description: selectedRule.value.description,
-      logicExpression: selectedRule.value.logicExpression || '',
-      enabled: true,
-      rule_code: generatedCode.value,
-    });
+    await updateRule(
+      selectedRule.value.id,
+      {
+        drug_name: selectedRule.value.drugName,
+        ruleId: selectedRule.value.ruleId,
+        type: selectedRule.value.type,
+        description: selectedRule.value.description,
+        logicExpression:
+          compilationResult.value?.logical_expression ||
+          selectedRule.value.logicExpression ||
+          '',
+        enabled: true,
+        rule_code: generatedCode.value,
+      },
+      { compileScope: true },
+    );
     ElMessage.success('Rule library updated');
-    await fetchData();
+    selectedRule.value.ruleCode = generatedCode.value;
+    selectedRule.value.enabled = true;
   } catch (error: any) {
     console.error(error);
     const message =
@@ -272,8 +309,8 @@ onMounted(fetchData);
       <div>
         <div class="title-main">Rule Compilation</div>
         <div class="title-sub">
-          Select a rule from the rule library, generate executable code from its
-          name and description, and write the result back to the current rule.
+          Decompose an existing rule, bind it to approved EMR capabilities, and
+          compile a deterministic Python program.
         </div>
       </div>
     </div>
@@ -310,14 +347,14 @@ onMounted(fetchData);
           >
             <div class="rule-item__top">
               <span class="rule-name">
-                {{ getBilingualRuleName(item.drugName) || item.ruleId }}
+                {{ getRuleNameEnglish(item.drugName) || 'Translation unavailable' }}
               </span>
               <el-tag size="small" :type="item.enabled ? 'success' : 'info'">
                 {{ item.enabled ? 'Enabled' : 'Disabled' }}
               </el-tag>
             </div>
             <div class="rule-item__meta">
-              <span>{{ getBilingualRuleTypeLabel(item.type) }}</span>
+              <span>{{ getRuleTypeLabel(item.type) || 'Translation unavailable' }}</span>
               <span>{{ hasCode(item.ruleCode) ? 'Compiled' : 'Not Compiled' }}</span>
             </div>
             <div class="rule-item__id">{{ item.displayRuleId || getDisplayRuleId(item.ruleId) }}</div>
@@ -360,34 +397,23 @@ onMounted(fetchData);
         </template>
 
         <template v-if="selectedRule">
-          <div class="rule-summary">
+          <section class="pipeline-section">
+            <div class="section-title">1. Intermediate Rule Representation (IRR)</div>
             <div class="summary-row">
-              <span class="label">Rule Name</span>
-              <span>{{ getBilingualRuleName(selectedRule.drugName) }}</span>
+              <span class="label">Rule Category</span>
+              <span>{{ displayIrr?.ruleCategory }}</span>
             </div>
             <div class="summary-row">
-              <span class="label">Rule Type</span>
-              <span>{{ getBilingualRuleTypeLabel(selectedRule.type) }}</span>
+              <span class="label">Constraint Object</span>
+              <span>{{ displayIrr?.constraintObject }}</span>
             </div>
             <div class="summary-row summary-row--block">
-              <span class="label">Description</span>
+              <span class="label">Constraint Condition</span>
               <div class="description-box">
-                <div>
-                  {{
-                    getRuleDescriptionEnglish(selectedRule.description) ||
-                    selectedRule.description ||
-                    '-'
-                  }}
-                </div>
-                <div
-                  v-if="selectedRule.description && getRuleDescriptionEnglish(selectedRule.description)"
-                  class="description-zh"
-                >
-                  {{ selectedRule.description }}
-                </div>
+                {{ displayIrr?.constraintCondition }}
               </div>
             </div>
-          </div>
+          </section>
 
           <div class="toolbar">
             <el-button
@@ -408,9 +434,9 @@ onMounted(fetchData);
             <el-button
               :disabled="!generatedCode.trim()"
               :loading="testing"
-              @click="handleTest"
+              @click="handleValidate"
             >
-              Run Test
+              Validate Program
             </el-button>
             <el-button
               type="success"
@@ -422,10 +448,71 @@ onMounted(fetchData);
             </el-button>
           </div>
 
-          <div class="result-title">Compilation Result</div>
-          <div class="code-box">
-            <pre>{{ generatedCode || 'Select a rule and click "Compile Rule" to generate code' }}</pre>
-          </div>
+          <section class="pipeline-section">
+            <div class="section-title">2. Atomic Constraints</div>
+            <el-table
+              v-if="compilationResult?.atomic_constraints?.length"
+              :data="compilationResult.atomic_constraints"
+              border
+              size="small"
+            >
+              <el-table-column prop="id" label="Atomic Constraint ID" width="170" />
+              <el-table-column
+                prop="normalized_constraint"
+                label="Normalized Constraint"
+                min-width="260"
+              />
+              <el-table-column prop="source_span" label="Source Span" min-width="260" />
+            </el-table>
+            <el-empty v-else description="Compile the selected rule to view atomic constraints" />
+          </section>
+
+          <section class="pipeline-section">
+            <div class="section-title">3. Logical Expression</div>
+            <div class="expression-box">
+              {{ compilationResult?.logical_expression || 'Compile the selected rule to view its logical expression' }}
+            </div>
+          </section>
+
+          <section class="pipeline-section">
+            <div class="section-title">4. Execution Bindings</div>
+            <el-table
+              v-if="compilationResult?.execution_bindings?.length"
+              :data="compilationResult.execution_bindings"
+              border
+              size="small"
+            >
+              <el-table-column
+                prop="atomic_constraint_id"
+                label="Atomic Constraint ID"
+                width="170"
+              />
+              <el-table-column label="EMR Data Source / Field" min-width="190">
+                <template #default="scope">
+                  {{ scope.row.data_source }} / {{ scope.row.field }}
+                </template>
+              </el-table-column>
+              <el-table-column prop="audit_function" label="Audit Function" width="140" />
+              <el-table-column label="Function Parameters" min-width="220">
+                <template #default="scope">
+                  {{ formatParameters(scope.row.function_parameters) || '-' }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="expected_condition"
+                label="Expected Condition"
+                min-width="220"
+              />
+            </el-table>
+            <el-empty v-else description="Compile the selected rule to view execution bindings" />
+          </section>
+
+          <section class="pipeline-section generated-program-section">
+            <div class="section-title">5. Generated Python Program</div>
+            <div class="code-box">
+              <pre>{{ generatedCode || 'Select a rule and click "Compile Rule" to generate code' }}</pre>
+            </div>
+          </section>
         </template>
         <el-empty
           v-else
@@ -569,10 +656,19 @@ onMounted(fetchData);
   justify-content: flex-end;
 }
 
-.rule-summary {
+.pipeline-section {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+}
+
+.section-title {
+  font-weight: 600;
+  color: #303133;
 }
 
 .summary-row {
@@ -603,22 +699,24 @@ onMounted(fetchData);
   white-space: pre-wrap;
 }
 
-.description-zh {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #8a94a6;
-}
-
 .toolbar {
   display: flex;
   gap: 10px;
   flex-wrap: wrap;
 }
 
-.result-title {
-  font-weight: 600;
-  color: #303133;
+.expression-box {
+  padding: 14px;
+  color: #24364a;
+  font-family:
+    'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, Courier, monospace;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.generated-program-section {
+  flex: 1;
 }
 
 .code-box {

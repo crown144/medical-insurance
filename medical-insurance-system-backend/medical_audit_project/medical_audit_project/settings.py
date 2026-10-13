@@ -99,7 +99,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': 'Ecust@1234',
+        'PASSWORD': '555321',
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
@@ -213,7 +213,7 @@ import os as _os
 # RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
 #     'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
 # )
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'sk-c2703bc4d768476e9171a26341762002')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'https://ws-a96ee3qy6pgzobqq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
 )
@@ -256,7 +256,7 @@ RULE_IMPORT_TASK_TIME_LIMIT = int(
 # ============================================================
 RULE_COMPILE_LLM_API_KEY = _os.environ.get(
     'RULE_COMPILE_LLM_API_KEY',
-    _os.environ.get('AGENTA_API_KEY', _os.environ.get('DASHSCOPE_API_KEY', '')),
+    _os.environ.get('AGENTA_API_KEY', _os.environ.get('DASHSCOPE_API_KEY', 'sk-c2703bc4d768476e9171a26341762002')),
 )
 RULE_COMPILE_LLM_BASE_URL = _os.environ.get(
     'RULE_COMPILE_LLM_BASE_URL',

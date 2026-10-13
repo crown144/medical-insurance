@@ -30,6 +30,7 @@ DEMO_RULE_IDS = [
     'R-20260704151207710658',
     'R-20260709123055310514',
     'R-20260709124003677192',
+    'rule_131',
 ]
 
 COMPILE_RULE_IDS = [
@@ -37,8 +38,15 @@ COMPILE_RULE_IDS = [
     'R-0002',
     'R-20260704151200686615',
     'R-20260704151201033234',
+    'rule_131',
 ]
-COMPILE_RULE_NAMES = ['艾普拉唑', '醋酸钙', '静脉注射', '动脉加压注射']
+COMPILE_RULE_NAMES = [
+    '艾普拉唑',
+    '醋酸钙',
+    '静脉注射',
+    '动脉加压注射',
+    '恩替卡韦口服溶液',
+]
 
 
 def _serialize_generation_result(generated):
@@ -54,17 +62,37 @@ def _serialize_generation_result(generated):
         'runtime_mode': generated.rule_snapshot.get('runtime_mode'),
         'runtime_label': generated.rule_snapshot.get('runtime_label'),
         'llm_config': generated.rule_snapshot.get('llm_config'),
+        'irr': generated.irr,
+        'atomic_constraints': generated.atomic_constraints,
+        'logic_tree': generated.logic_tree,
+        'logical_expression': generated.logical_expression,
+        'applicability_binding': generated.applicability_binding,
+        'constraint_bindings': generated.constraint_bindings,
+        'execution_bindings': generated.execution_bindings,
     }
 
 
-def _run_agenta_generation(task_id, rule_text):
+def _rule_compilation_input(payload):
+    rule_pk = payload.get('rule_pk') or payload.get('rulePk')
+    if rule_pk not in [None, '']:
+        rule = Rule.objects.get(pk=rule_pk)
+        return rule.description, {
+            'rule_category': rule.type,
+            'constraint_object': rule.drug_name,
+            'constraint_condition': rule.description,
+        }
+    rule_text = (payload.get('rule_text') or payload.get('ruleText') or '').strip()
+    return rule_text, None
+
+
+def _run_agenta_generation(task_id, rule_text, irr=None):
     _agenta_tasks[task_id] = {
         'status': 'running',
-        'message': '规则编译中',
+        'message': 'Rule compilation is running.',
         'result': None,
     }
     try:
-        generated = AgentAService.build(rule_text)
+        generated = AgentAService.build(rule_text, irr=irr)
         _agenta_tasks[task_id] = {
             'status': 'success',
             'message': 'ok',
@@ -74,9 +102,9 @@ def _run_agenta_generation(task_id, rule_text):
         logger.exception('AgentA async rule generation failed')
         _agenta_tasks[task_id] = {
             'status': 'failed',
-            'message': '规则编译模型请求超时，请稍后重试或缩短规则描述'
+            'message': 'Rule compilation timed out. Please try again later.'
             if isinstance(exc, TimeoutError) or 'timeout' in str(exc).lower() or 'timed out' in str(exc).lower()
-            else '规则编译模型调用失败',
+            else 'Rule compilation failed.',
             'result': {
                 'error': str(exc) or exc.__class__.__name__,
                 'error_type': exc.__class__.__name__,
@@ -131,7 +159,7 @@ class RuleViewSet(viewsets.ModelViewSet):
         lower_message = message.lower()
         is_timeout = isinstance(exc, TimeoutError) or 'timeout' in lower_message or 'timed out' in lower_message
         http_status = status.HTTP_504_GATEWAY_TIMEOUT if is_timeout else status.HTTP_502_BAD_GATEWAY
-        user_message = '规则编译模型请求超时，请稍后重试或缩短规则描述' if is_timeout else '规则编译模型调用失败'
+        user_message = 'Rule compilation timed out. Please try again later.' if is_timeout else 'Rule compilation failed.'
         return Response({
             'code': 1,
             'message': user_message,
@@ -143,12 +171,15 @@ class RuleViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='agenta/generate')
     def agenta_generate(self, request):
-        rule_text = (request.data.get('rule_text') or request.data.get('ruleText') or '').strip()
+        try:
+            rule_text, irr = _rule_compilation_input(request.data)
+        except Rule.DoesNotExist:
+            return Response({'code': 1, 'message': 'The selected rule does not exist.', 'result': None}, status=status.HTTP_404_NOT_FOUND)
         if not rule_text:
-            return Response({'code': 1, 'message': '规则文本不能为空', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'code': 1, 'message': 'Constraint Condition is required.', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            generated = AgentAService.build(rule_text)
+            generated = AgentAService.build(rule_text, irr=irr)
         except Exception as exc:
             logger.exception('AgentA rule generation failed')
             return self._agenta_error_response(exc)
@@ -167,22 +198,32 @@ class RuleViewSet(viewsets.ModelViewSet):
                 'runtime_mode': generated.rule_snapshot.get('runtime_mode'),
                 'runtime_label': generated.rule_snapshot.get('runtime_label'),
                 'llm_config': generated.rule_snapshot.get('llm_config'),
+                'irr': generated.irr,
+                'atomic_constraints': generated.atomic_constraints,
+                'logic_tree': generated.logic_tree,
+                'logical_expression': generated.logical_expression,
+                'applicability_binding': generated.applicability_binding,
+                'constraint_bindings': generated.constraint_bindings,
+                'execution_bindings': generated.execution_bindings,
             },
         })
 
     @action(detail=False, methods=['post'], url_path='agenta/generate/start')
     def agenta_generate_start(self, request):
-        rule_text = (request.data.get('rule_text') or request.data.get('ruleText') or '').strip()
+        try:
+            rule_text, irr = _rule_compilation_input(request.data)
+        except Rule.DoesNotExist:
+            return Response({'code': 1, 'message': 'The selected rule does not exist.', 'result': None}, status=status.HTTP_404_NOT_FOUND)
         if not rule_text:
-            return Response({'code': 1, 'message': '规则文本不能为空', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'code': 1, 'message': 'Constraint Condition is required.', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
 
         task_id = uuid.uuid4().hex
         _agenta_tasks[task_id] = {
             'status': 'pending',
-            'message': '规则编译已提交',
+            'message': 'Rule compilation was submitted.',
             'result': None,
         }
-        _agenta_executor.submit(_run_agenta_generation, task_id, rule_text)
+        _agenta_executor.submit(_run_agenta_generation, task_id, rule_text, irr)
         return Response({
             'code': 0,
             'message': 'ok',
@@ -196,7 +237,7 @@ class RuleViewSet(viewsets.ModelViewSet):
     def agenta_generate_status(self, request, task_id=None):
         task = _agenta_tasks.get(task_id)
         if not task:
-            return Response({'code': 1, 'message': '编译任务不存在或已过期', 'result': None}, status=status.HTTP_404_NOT_FOUND)
+            return Response({'code': 1, 'message': 'The compilation task does not exist or has expired.', 'result': None}, status=status.HTTP_404_NOT_FOUND)
 
         return Response({
             'code': 0 if task['status'] != 'failed' else 1,
@@ -212,7 +253,7 @@ class RuleViewSet(viewsets.ModelViewSet):
     def agenta_validate(self, request):
         rule_code = (request.data.get('rule_code') or request.data.get('ruleCode') or '').strip()
         if not rule_code:
-            return Response({'code': 1, 'message': '规则代码不能为空', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'code': 1, 'message': 'Rule code is required.', 'result': None}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'code': 0, 'message': 'ok', 'result': AgentAService.validate_code(rule_code)})
 
     @action(detail=False, methods=['post'], url_path='agenta/import')

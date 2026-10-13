@@ -1,6 +1,9 @@
 from django.test import SimpleTestCase
 
-from .over_standard_v2 import build_charge_violation_item
+from .over_standard_v2 import (
+    build_charge_violation_item,
+    build_medication_violation_item,
+)
 
 
 class ChargeViolationItemTests(SimpleTestCase):
@@ -36,5 +39,36 @@ class ChargeViolationItemTests(SimpleTestCase):
         self.assertEqual(item["收费项目名称"], "")
         self.assertEqual(item["收费项目代码"], "")
         self.assertEqual(item["收费明细"], [])
+
+
+class MedicationViolationItemTests(SimpleTestCase):
+    class RuleStub:
+        drug_name = "艾普拉唑"
+
+    def test_uses_actual_medication_record_for_restricted_medication_rule(self):
+        patient_json = {
+            "用药信息": [
+                {"药品通用名": "艾普拉唑", "药品编码": "MED-001", "剂量": "5 mg"},
+                {"药品通用名": "奥美拉唑", "药品编码": "MED-002"},
+            ]
+        }
+
+        item = build_medication_violation_item(
+            patient_json, self.RuleStub(), "超限定用药"
+        )
+
+        self.assertEqual(item["drug_name"], "艾普拉唑")
+        self.assertEqual(item["药品编码"], "MED-001")
+        self.assertEqual(item["用药明细"][0]["剂量"], "5 mg")
+        self.assertEqual(item["用药明细"][0]["用药明细索引"], 0)
+
+    def test_does_not_fabricate_medication_when_no_record_matches(self):
+        item = build_medication_violation_item(
+            {"用药信息": []}, self.RuleStub(), "超限定用药"
+        )
+
+        self.assertEqual(item["drug_name"], "")
+        self.assertEqual(item["药品通用名"], "")
+        self.assertEqual(item["用药明细"], [])
 
 # Create your tests here.

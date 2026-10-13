@@ -411,6 +411,108 @@ def build_charge_highlights(details: List[Dict], evidence: Dict = None) -> List[
     return highlights
 
 
+_MEDICATION_NAME_KEYS = ("药品通用名", "药物名称", "药品名称")
+_MEDICATION_CODE_KEYS = ("药品编码", "医保编码", "药品代码")
+
+
+def _get_first_text(item: Dict, keys) -> tuple:
+    """Return the first populated field name and value from an EMR item."""
+    for key in keys:
+        text = _non_empty_text(item.get(key))
+        if text:
+            return key, text
+    return "", ""
+
+
+def get_matched_medication_items(patient_json: Dict, rule: Rule) -> List[Dict]:
+    """Locate the audited medication in the patient's actual medication records."""
+    medication_data = patient_json.get("用药信息", []) if isinstance(patient_json, dict) else []
+    if not isinstance(medication_data, list):
+        return []
+
+    rule_name = _non_empty_text(getattr(rule, "drug_name", ""))
+    if not rule_name:
+        return []
+
+    exact_matches = []
+    contained_matches = []
+    normalized_rule_name = rule_name.casefold()
+    for index, raw_item in enumerate(medication_data):
+        if not isinstance(raw_item, dict):
+            continue
+
+        _, item_name = _get_first_text(raw_item, _MEDICATION_NAME_KEYS)
+        if not item_name:
+            continue
+
+        normalized_item_name = item_name.casefold()
+        if normalized_item_name == normalized_rule_name:
+            target = exact_matches
+        elif normalized_rule_name in normalized_item_name or normalized_item_name in normalized_rule_name:
+            target = contained_matches
+        else:
+            continue
+
+        snapshot = deepcopy(raw_item)
+        snapshot.pop("_index", None)
+        snapshot["用药明细索引"] = index
+        target.append(snapshot)
+
+    # Prefer exact EMR matches so a generic rule name does not select a similar drug
+    # when the exact medication record is available.
+    return exact_matches or contained_matches
+
+
+def build_medication_violation_item(
+    patient_json: Dict, rule: Rule, rule_type: str
+) -> Dict:
+    """Build a violation item from the patient's real medication record."""
+    details = get_matched_medication_items(patient_json, rule)
+    if details:
+        first_item = details[0]
+        _, medication_name = _get_first_text(first_item, _MEDICATION_NAME_KEYS)
+        _, medication_code = _get_first_text(first_item, _MEDICATION_CODE_KEYS)
+        return {
+            "drug_name": medication_name,
+            "药品通用名": medication_name,
+            "药品编码": medication_code,
+            "用药明细": details,
+            "提示": f"违反{rule_type}规则",
+        }
+
+    return {
+        "drug_name": "",
+        "药品通用名": "",
+        "药品编码": "",
+        "用药明细": [],
+        "提示": f"违反{rule_type}规则；未定位到可对应的原始用药明细",
+    }
+
+
+def build_medication_highlights(details: List[Dict], evidence: Dict = None) -> List[Dict]:
+    """Preserve rule evidence and add locations for matched medication records."""
+    highlights = []
+    seen = set()
+    for item in (evidence or {}).get("highlights", []):
+        if not isinstance(item, dict):
+            continue
+        field_path = _non_empty_text(item.get("field_path"))
+        text = _non_empty_text(item.get("highlighted_text"))
+        if field_path and text and (field_path, text) not in seen:
+            highlights.append({"field_path": field_path, "highlighted_text": text})
+            seen.add((field_path, text))
+
+    for item in details:
+        index = item.get("用药明细索引")
+        for field_keys in (_MEDICATION_NAME_KEYS, _MEDICATION_CODE_KEYS):
+            field, text = _get_first_text(item, field_keys)
+            field_path = f"$.用药信息[{index}].{field}"
+            if field and text and (field_path, text) not in seen:
+                highlights.append({"field_path": field_path, "highlighted_text": text})
+                seen.add((field_path, text))
+    return highlights
+
+
 def preprocess_patient_data(patient_json: dict):
     """
     数据适配层：
@@ -541,15 +643,25 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
                 logger.info(f"[RuleEngineV2] Violation found for rule {rule.rule_id}")
 
                 evidence = res.get("evidence", {})
-                violation_item = build_charge_violation_item(
-                    patient_json=patient_json,
-                    rule=rule,
-                    rule_type=rule_type,
-                    evidence=evidence,
-                )
-                highlights = build_charge_highlights(
-                    violation_item["收费明细"], evidence
-                )
+                if rule_type == "超限定用药":
+                    violation_item = build_medication_violation_item(
+                        patient_json=patient_json,
+                        rule=rule,
+                        rule_type=rule_type,
+                    )
+                    highlights = build_medication_highlights(
+                        violation_item["用药明细"], evidence
+                    )
+                else:
+                    violation_item = build_charge_violation_item(
+                        patient_json=patient_json,
+                        rule=rule,
+                        rule_type=rule_type,
+                        evidence=evidence,
+                    )
+                    highlights = build_charge_highlights(
+                        violation_item["收费明细"], evidence
+                    )
                 
                 all_results.append({
                     "passed": False,

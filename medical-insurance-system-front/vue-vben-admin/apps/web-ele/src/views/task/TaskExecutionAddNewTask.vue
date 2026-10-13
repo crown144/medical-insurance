@@ -597,7 +597,7 @@ const createTask = async () => {
     };
     await createTaskApi(payload);
     ElMessage.success('Task created successfully.');
-    router.back();
+    await router.push({ name: 'ExecuteRun' });
   } catch (error) {
     console.error(error);
   } finally {

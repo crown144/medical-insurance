@@ -25,6 +25,7 @@ export const DEMO_RULE_IDS = [
   'R-20260704151207710658',
   'R-20260709123055310514',
   'R-20260709124003677192',
+  'rule_131',
 ] as const;
 
 export const COMPILE_RULE_IDS = [
@@ -32,12 +33,14 @@ export const COMPILE_RULE_IDS = [
   'R-0002',
   'R-20260704151200686615',
   'R-20260704151201033234',
+  'rule_131',
 ] as const;
 export const COMPILE_RULE_NAMES = [
   '艾普拉唑',
   '醋酸钙',
   '静脉注射',
   '动脉加压注射',
+  '恩替卡韦口服溶液',
 ] as const;
 
 const DEMO_RULE_ID_SET = new Set<string>(DEMO_RULE_IDS);
@@ -58,6 +61,7 @@ const RULE_NAME_LABEL_MAP: Record<string, string> = {
   气管切开护理: 'Tracheostomy care',
   耳部特殊治疗: 'Special ear treatment',
   艾普拉唑: 'Ilaprazole',
+  恩替卡韦口服溶液: 'Entecavir Oral Solution',
   血气分析: 'Blood gas analysis',
   血清天门冬氨酸氨基转移酶测定: 'Serum aspartate aminotransferase test',
   葡萄糖测定: 'Glucose test',
@@ -111,6 +115,8 @@ const RULE_DESCRIPTION_LABEL_MAP: Record<string, string> = {
     'Use of ilaprazole requires a diagnosis of duodenal ulcer or reflux esophagitis',
   '使用醋酸钙须有高磷血症诊断':
     'Use of calcium acetate tablets requires a diagnosis of hyperphosphatemia',
+  '限慢性乙型肝炎成人患者或2岁至<18岁慢性HBV感染代偿性肝病的核苷初治儿童患者。':
+    'Limited to adult patients with chronic hepatitis B or nucleoside-naive pediatric patients aged 2 to under 18 years with chronic HBV infection and compensated liver disease.',
   '收取“血气分析”费用的同时收取“血清碳酸氢盐(HCO3)测定”费用':
     'Charging for blood gas analysis together with serum bicarbonate (HCO3) testing',
   '收取尿液分析费用时，同时收取尿沉渣白细胞分类费用或尿蛋白定量费用':

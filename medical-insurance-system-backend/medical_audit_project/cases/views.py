@@ -42,22 +42,15 @@ def extract_patient_name(patient_json):
 class CaseListView(APIView):
     def get(self, request, *args, **kwargs):
         items = []
-        seen_ids = set()
-
-        for case in Case.objects.all().order_by('hospitalization_id'):
-            items.append({
-                "hospitalization_id": case.hospitalization_id,
-                "patient_name": extract_patient_name(case.json_content),
-            })
-            seen_ids.add(case.hospitalization_id)
 
         if getattr(settings, 'DEMO_MODE', False):
+            # The demo selector represents the files currently available to the
+            # demo. Database rows are runtime caches and may outlive a removed
+            # JSON file, so including them would expose stale selections.
             mock_dir = Path(settings.BASE_DIR) / 'mock_patient_data'
             if mock_dir.exists():
                 for json_file in sorted(mock_dir.glob('*.json')):
                     hospitalization_id = json_file.stem
-                    if hospitalization_id in seen_ids:
-                        continue
                     patient_name = ""
                     try:
                         patient_name = extract_patient_name(
@@ -69,6 +62,13 @@ class CaseListView(APIView):
                         "hospitalization_id": hospitalization_id,
                         "patient_name": patient_name,
                     })
+            return Response(items)
+
+        for case in Case.objects.all().order_by('hospitalization_id'):
+            items.append({
+                "hospitalization_id": case.hospitalization_id,
+                "patient_name": extract_patient_name(case.json_content),
+            })
 
         return Response(items)
 

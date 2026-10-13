@@ -13,6 +13,7 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   cancelRuleImportApi,
   confirmRuleImportApi,
+  deleteRuleImportTaskApi,
   downloadRuleImportExampleApi,
   downloadRuleImportResultApi,
   getExtractedRulesApi,
@@ -480,6 +481,38 @@ async function handleCancel(task: RuleImportTask) {
   }
 }
 
+async function handleDelete(task: RuleImportTask) {
+  try {
+    await ElMessageBox.confirm(
+      `Delete task "${task.task_name || task.file_name}" and its extracted records? This action cannot be undone.`,
+      'Delete Conversion History',
+      {
+        confirmButtonText: 'Delete',
+        confirmButtonClass: 'el-button--danger',
+        type: 'warning',
+      },
+    );
+  } catch {
+    return;
+  }
+
+  try {
+    await deleteRuleImportTaskApi(task.id);
+    if (currentTask.value?.id === task.id) {
+      resetUpload();
+    }
+    if (historyList.value.length === 1 && historyPage.value > 1) {
+      historyPage.value -= 1;
+    }
+    await loadHistory();
+    ElMessage.success('Conversion history deleted.');
+  } catch (error: any) {
+    const msg =
+      error?.response?.data?.error || error?.message || 'Deletion failed';
+    ElMessage.error(msg);
+  }
+}
+
 const canImport = computed(
   () => currentTask.value?.status === 'success' && rulesTotal.value > 0,
 );
@@ -822,7 +855,7 @@ onUnmounted(() => {
               </el-table-column>
               <el-table-column
                 label="Actions"
-                width="180"
+                width="230"
                 fixed="right"
                 align="center"
               >
@@ -845,6 +878,14 @@ onUnmounted(() => {
                     @click="handleCancel(row)"
                   >
                     Cancel
+                  </el-button>
+                  <el-button
+                    v-else
+                    type="danger"
+                    link
+                    @click="handleDelete(row)"
+                  >
+                    Delete
                   </el-button>
                 </template>
               </el-table-column>

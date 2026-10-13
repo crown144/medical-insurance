@@ -218,6 +218,20 @@ class TaskApiTests(TestCase):
         self.assertEqual(resp.status_code, 200)
         self.assertIn('attachment', resp['Content-Disposition'])
 
+    def test_delete_finished_task_cascades_extracted_rules(self):
+        task_id = self.task.id
+        resp = self.client.delete(f'/api/rule-import/tasks/{task_id}/')
+        self.assertEqual(resp.status_code, 204)
+        self.assertFalse(RuleImportTask.objects.filter(pk=task_id).exists())
+        self.assertFalse(ExtractedRule.objects.filter(import_task_id=task_id).exists())
+
+    def test_delete_running_task_requires_cancel_first(self):
+        pending = RuleImportTask.objects.create(
+            task_name='pending-delete', status=RuleImportTask.Status.PENDING)
+        resp = self.client.delete(f'/api/rule-import/tasks/{pending.id}/')
+        self.assertEqual(resp.status_code, 409)
+        self.assertTrue(RuleImportTask.objects.filter(pk=pending.id).exists())
+
 
 @override_settings(MEDIA_ROOT=_MEDIA)
 class CeleryTaskTests(TransactionTestCase):

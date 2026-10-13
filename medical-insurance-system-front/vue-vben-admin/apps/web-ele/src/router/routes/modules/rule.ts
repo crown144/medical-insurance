@@ -154,6 +154,7 @@ const ruleLibrary: RouteRecordRaw = {
     title: 'Rule Library',
     icon: 'ant-design:unordered-list-outlined',
     order: 12,
+    hideChildrenInMenu: true,
   },
   redirect: '/rule-library/all-rules',
   children: [
@@ -161,7 +162,11 @@ const ruleLibrary: RouteRecordRaw = {
       path: 'all-rules',
       name: 'AllRules',
       component: () => import('#/views/rule/AllRules.vue'),
-      meta: { title: 'All Rules', icon: 'mdi:format-list-bulleted' },
+      meta: {
+        title: 'Rule Library',
+        activePath: '/rule-library',
+        hideInMenu: true,
+      },
     },
     {
       path: 'limited-drug',

@@ -12,11 +12,11 @@ import {
   updateRule,
 } from '#/api/rule';
 import {
-  filterDemoRules,
-  getBilingualRuleName,
-  getBilingualRuleTypeLabel,
+  filterCompileRules,
   getDisplayRuleId,
   getRuleDescriptionEnglish,
+  getRuleNameEnglish,
+  getRuleTypeLabel,
   RULE_TYPE_OPTIONS,
 } from '#/config/rule-type';
 
@@ -51,7 +51,7 @@ const form = reactive({
 const typeOptions = RULE_TYPE_OPTIONS;
 const displayTypeOptions = RULE_TYPE_OPTIONS.map((item) => ({
   ...item,
-  label: getBilingualRuleTypeLabel(item.value),
+  label: getRuleTypeLabel(item.value),
 }));
 const statusOptions = [
   { label: 'Enabled', value: 'true' },
@@ -117,17 +117,18 @@ const fetchData = async () => {
   loading.value = true;
   try {
     const res = await getRuleList({
+      compile: true,
       paginate: false,
       ordering: 'id',
     });
     const rawList = res?.results || (Array.isArray(res) ? res : []);
-    const demoList = applyLocalFilters(filterDemoRules(rawList.map(normalizeRule)));
+    const demoList = applyLocalFilters(filterCompileRules(rawList.map(normalizeRule)));
     total.value = demoList.length;
     const start = (currentPage.value - 1) * pageSize.value;
     list.value = demoList.slice(start, start + pageSize.value);
   } catch (error) {
     console.error(error);
-    ElMessage.error('Failed to load all rules.');
+    ElMessage.error('Failed to load the rule library.');
   } finally {
     loading.value = false;
   }
@@ -221,7 +222,8 @@ const save = async () => {
 };
 
 const handleDelete = async (row: any) => {
-  await ElMessageBox.confirm(`Delete rule "${row.drugName}"?`, 'Delete Confirmation', {
+  const ruleName = getRuleNameEnglish(row.drugName) || 'this rule';
+  await ElMessageBox.confirm(`Delete rule "${ruleName}"?`, 'Delete Confirmation', {
     type: 'warning',
     confirmButtonText: 'Delete',
     cancelButtonText: 'Cancel',
@@ -244,11 +246,15 @@ const handleStatusChange = async (row: any) => {
   }
   const originalStatus = !row.enabled;
   try {
-    await toggleRuleStatus(row.id, row.enabled);
+    await toggleRuleStatus(row.id, row.enabled, { compileScope: true });
     ElMessage.success(row.enabled ? 'Rule enabled.' : 'Rule disabled.');
   } catch (error: any) {
     row.enabled = originalStatus;
     const message =
+      error?.enabled?.[0] ||
+      error?.enabled ||
+      error?.detail ||
+      error?.message ||
       error?.response?.data?.enabled?.[0] ||
       error?.response?.data?.enabled ||
       error?.response?.data?.detail ||
@@ -268,9 +274,14 @@ onMounted(fetchData);
 <template>
   <div class="page-card">
     <div class="header">
-      <div class="title">
+      <div class="title-block">
         <span class="bar"></span>
-        <span>All Rules</span>
+        <div>
+          <div class="title">Rule Library</div>
+          <div class="subtitle">
+            This page displays a curated selection of representative rules from the rule library.
+          </div>
+        </div>
       </div>
       <div class="header-actions">
         <el-button type="primary" @click="openAdd">Add</el-button>
@@ -323,7 +334,7 @@ onMounted(fetchData);
       <el-table-column prop="drugName" label="Rule Name" min-width="180">
         <template #default="{ row }">
           <el-button link type="primary" @click="openDetail(row)">
-            {{ getBilingualRuleName(row.drugName) }}
+            {{ getRuleNameEnglish(row.drugName) || '-' }}
           </el-button>
         </template>
       </el-table-column>
@@ -331,7 +342,7 @@ onMounted(fetchData);
       <el-table-column prop="type" label="Rule Type" width="160" align="center">
         <template #default="{ row }">
           <el-button link type="primary" @click="goToTypeRule(row.type)">
-            {{ getBilingualRuleTypeLabel(row.type) }}
+            {{ getRuleTypeLabel(row.type) }}
           </el-button>
         </template>
       </el-table-column>
@@ -430,10 +441,10 @@ onMounted(fetchData);
           {{ currentDetail.displayRuleId || getDisplayRuleId(currentDetail.ruleId) }}
         </el-descriptions-item>
         <el-descriptions-item label="Rule Name">
-          {{ getBilingualRuleName(currentDetail.drugName) }}
+          {{ getRuleNameEnglish(currentDetail.drugName) || '-' }}
         </el-descriptions-item>
         <el-descriptions-item label="Rule Type">
-          {{ getBilingualRuleTypeLabel(currentDetail.type) }}
+          {{ getRuleTypeLabel(currentDetail.type) }}
         </el-descriptions-item>
         <el-descriptions-item label="Status">
           <el-tag :type="currentDetail.enabled ? 'success' : 'danger'">
@@ -550,13 +561,23 @@ onMounted(fetchData);
   margin-bottom: 14px;
 }
 
-.title {
+.title-block {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.title {
   font-size: 18px;
   font-weight: 700;
   color: #1f2937;
+}
+
+.subtitle {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 400;
 }
 
 .bar {

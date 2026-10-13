@@ -64,6 +64,11 @@ export async function getRuleImportTaskApi(
   return response.data;
 }
 
+/** 删除已结束的导入任务及其抽取记录。 */
+export async function deleteRuleImportTaskApi(taskId: number): Promise<void> {
+  await baseRequestClient.delete(`/rule-import/tasks/${taskId}/`);
+}
+
 // ==================== 抽取规则明细 ====================
 
 export async function getExtractedRulesApi(

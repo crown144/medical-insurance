@@ -13,7 +13,6 @@ from django.conf import settings
 import ast
 import json
 
-from accounts.auth import get_request_profile
 from cases.models import Case
 
 
@@ -33,11 +32,6 @@ class CluePagination(PageNumberPagination):
     page_size = 10
     page_size_query_param = 'page_size'
     max_page_size = 500
-
-
-def _is_developer_request(request) -> bool:
-    profile = get_request_profile(request)
-    return bool(profile and profile.role == 'developer')
 
 
 def _parse_violation_item(value):
@@ -283,9 +277,7 @@ class ResultViewSet(viewsets.ReadOnlyModelViewSet): # 只读，不允许通过AP
 
     @action(detail=False, methods=['get'], url_path='clues')
     def clues(self, request):
-        """开发用户查看内部结果转换后的结构化违规线索。"""
-        if not _is_developer_request(request):
-            return Response({'detail': '仅开发用户可查看违规结果线索。'}, status=status.HTTP_403_FORBIDDEN)
+        """查看内部结果转换后的结构化违规线索。"""
 
         queryset = self.filter_queryset(self.get_queryset()).select_related('task', 'rule')
         queryset = _filter_by_clue_rule(queryset, request.query_params.get('rule_keyword'))

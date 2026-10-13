@@ -87,27 +87,41 @@ class FeiJianImportBatchViewSet(viewsets.ReadOnlyModelViewSet):
             '超标准收费',
         ]
         rule_ids = serializer.validated_data.get('rule_ids') or []
-        if not rule_ids:
-            return Response(
-                {'rule_ids': ['请至少选择一条需要执行的规则。']},
-                status=status.HTTP_400_BAD_REQUEST,
+        if rule_ids:
+            # Keep explicit rule selection compatible for existing API callers.
+            selected_rules = list(
+                Rule.objects.filter(id__in=set(rule_ids), status=True).order_by('id')
+            )
+            if len(selected_rules) != len(set(rule_ids)):
+                return Response(
+                    {'rule_ids': ['One or more rules do not exist or are disabled.']},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            invalid_rules = [
+                rule.rule_id for rule in selected_rules if rule.type not in selected_schemas
+            ]
+            if invalid_rules:
+                return Response(
+                    {
+                        'rule_ids': [
+                            f'Rules {", ".join(invalid_rules)} do not belong to the selected audit schemes.'
+                        ]
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            # Automatically include every enabled rule in the selected schemes.
+            selected_rules = list(
+                Rule.objects.filter(
+                    status=True,
+                    type__in=selected_schemas,
+                ).order_by('id')
             )
 
-        # 仅允许将已启用、且属于所选审查方案的规则加入任务，避免页面选择
-        # 与实际执行范围不一致。
-        selected_rules = list(
-            Rule.objects.filter(id__in=set(rule_ids), status=True).order_by('id')
-        )
-        if len(selected_rules) != len(set(rule_ids)):
+        if not selected_rules:
             return Response(
-                {'rule_ids': ['存在不存在或未启用的规则，请刷新后重新选择。']},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        invalid_rules = [rule.rule_id for rule in selected_rules if rule.type not in selected_schemas]
-        if invalid_rules:
-            return Response(
-                {'rule_ids': [f'规则 {", ".join(invalid_rules)} 不属于已选审查方案。']},
+                {'error': 'No enabled rules are available for the selected audit schemes.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         execute = serializer.validated_data.get('execute', True)

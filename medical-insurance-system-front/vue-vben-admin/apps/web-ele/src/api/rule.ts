@@ -18,7 +18,29 @@ export interface RuleItem {
 }
 
 export interface RuleGenerateResult {
+  atomic_constraints: Array<{
+    id: string;
+    normalized_constraint: string;
+    source_span: string;
+  }>;
+  execution_bindings: Array<{
+    atomic_constraint_id: string;
+    audit_function: string;
+    data_source: string;
+    expected_condition: string;
+    field: string;
+    function_parameters: Record<string, any>;
+    role: string;
+    status: 'bound' | 'unbound';
+  }>;
   generated_code: string;
+  irr: {
+    constraint_condition: string;
+    constraint_object: string;
+    rule_category: string;
+  };
+  logic_tree: Record<string, any> | string;
+  logical_expression: string;
   finish_reason?: string;
   llm_config?: Record<string, any>;
   raw_output?: any;
@@ -26,9 +48,12 @@ export interface RuleGenerateResult {
   rule_text: string;
   runtime_label?: string;
   runtime_mode?: string;
-  system_prompt?: string;
-  tool_schema?: Record<string, any>;
-  validation?: Record<string, any>;
+  system_prompt?: Record<string, any>;
+  tool_schema?: string[];
+  validation?: {
+    errors: string[];
+    valid: boolean;
+  };
 }
 
 interface RuleCompileTaskStatus {
@@ -44,8 +69,13 @@ export async function getRuleList(params: any) {
   return response.data;
 }
 
-export function toggleRuleStatus(id: number | string, enabled: boolean) {
-  return baseRequestClient.request(`/rules/${id}/`, {
+export function toggleRuleStatus(
+  id: number | string,
+  enabled: boolean,
+  options?: { compileScope?: boolean },
+) {
+  const query = options?.compileScope ? '?compile=true' : '';
+  return baseRequestClient.request(`/rules/${id}/${query}`, {
     data: { enabled },
     method: 'PATCH',
   });
@@ -59,15 +89,20 @@ export function createRule(data: Partial<RuleItem>) {
   return baseRequestClient.post('/rules/', data);
 }
 
-export function updateRule(id: number | string, data: Partial<RuleItem>) {
-  return baseRequestClient.put(`/rules/${id}/`, data);
+export function updateRule(
+  id: number | string,
+  data: Partial<RuleItem>,
+  options?: { compileScope?: boolean },
+) {
+  const query = options?.compileScope ? '?compile=true' : '';
+  return baseRequestClient.put(`/rules/${id}/${query}`, data);
 }
 
-export async function generateRuleApi(ruleText: string) {
+export async function generateRuleApi(rulePk: number | string) {
   const startResponse = await baseRequestClient.post<any>(
     '/rules/agenta/generate/start/',
     {
-      rule_text: ruleText,
+      rule_pk: rulePk,
     },
   );
   const taskId = startResponse.data?.result?.task_id;

@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 from django.conf import settings
 from django.http import FileResponse, Http404, HttpResponse
-from rest_framework import status, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny
@@ -142,7 +142,8 @@ class RuleImportExampleDownloadView(APIView):
         return response
 
 
-class RuleImportTaskViewSet(viewsets.ReadOnlyModelViewSet):
+class RuleImportTaskViewSet(
+        mixins.DestroyModelMixin, viewsets.ReadOnlyModelViewSet):
     """规则导入任务：列表 / 详情(轮询) / 抽取结果 / 确认入库 / 下载 / 取消。"""
     queryset = RuleImportTask.objects.all()
     serializer_class = RuleImportTaskSerializer
@@ -159,6 +160,25 @@ class RuleImportTaskViewSet(viewsets.ReadOnlyModelViewSet):
         if search:
             qs = qs.filter(task_name__icontains=search)
         return qs
+
+    def destroy(self, request, *args, **kwargs):
+        task = self.get_object()
+        if task.status not in (
+                RuleImportTask.Status.SUCCESS,
+                RuleImportTask.Status.FAILED,
+                RuleImportTask.Status.CANCELED):
+            return Response(
+                {'error': '运行中的任务不能删除，请先取消任务。'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        original_file = task.original_file
+        storage = original_file.storage if original_file else None
+        file_name = original_file.name if original_file else ''
+        response = super().destroy(request, *args, **kwargs)
+        if storage and file_name:
+            storage.delete(file_name)
+        return response
 
     @action(detail=True, methods=['get'], url_path='rules')
     def extracted_rules(self, request, pk=None):

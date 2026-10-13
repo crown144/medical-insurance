@@ -10,6 +10,7 @@ const result: RouteRecordRaw = {
     title: 'Audit Results',
     icon: 'mdi:file-document-outline',
     order: 30,
+    hideInMenu: true,
   },
   redirect: '/result/task-overview',
   children: [
@@ -42,7 +43,6 @@ const result: RouteRecordRaw = {
       meta: {
         title: 'Violation Clues',
         icon: 'mdi:table-eye',
-        authority: ['developer'],
       },
     },
 
