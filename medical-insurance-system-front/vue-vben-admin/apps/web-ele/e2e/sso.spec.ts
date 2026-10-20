@@ -8,7 +8,12 @@ const token = 'isolated-browser-test-token';
 
 // 模拟门户与业务 API；真实 Django 令牌和 Word 生成由后端测试覆盖。
 async function mockApis(page: BrowserContext | Page, rejectTicket = false) {
-  const requests: { path: string; gatewayPath: string; authorization?: string; body: any }[] = [];
+  const requests: {
+    path: string;
+    gatewayPath: string;
+    authorization?: string;
+    body: any;
+  }[] = [];
   await page.route(/\/(?:api|yibao-api)\//, async (route) => {
     const request = route.request();
     const url = new URL(request.url());
@@ -140,7 +145,9 @@ test('门户卡片新窗口打开无参数的注册地址 → 自动 CAS 登录 
   await expect(page).toHaveURL(portalHome);
   await expect(card).toBeVisible();
   expect(requests.length).toBeGreaterThan(0);
-  expect(requests.every((r) => r.gatewayPath.startsWith('/yibao-api/'))).toBe(true);
+  expect(requests.every((r) => r.gatewayPath.startsWith('/yibao-api/'))).toBe(
+    true,
+  );
   expect(requests.find((r) => r.path === '/api/sso/login')?.body).toEqual({
     ticket: 'ST-browser-test',
     appid: 'test-app',
@@ -270,4 +277,35 @@ test('无效 ticket 显示错误并停止，不进入业务页或循环登录', 
   ).toBeVisible();
   expect(requests.filter((r) => r.path === '/api/tasks/')).toHaveLength(0);
   expect(page.url()).not.toContain('ticket=');
+});
+
+test('安全响应头下门户登录正常，CSP 阻止内联脚本', async ({ page }) => {
+  test.skip(
+    process.env.EXPECT_SECURITY_HEADERS !== 'true',
+    '需要带安全响应头的静态服务',
+  );
+  const violations: string[] = [];
+  page.on('console', (message) => {
+    if (/Content Security Policy|violates.*directive/i.test(message.text()))
+      violations.push(message.text());
+  });
+  await mockApis(page);
+  await page.goto(appUrl('/task/manage/execution'));
+  await expect(page.getByText('门户联调任务', { exact: true })).toBeVisible();
+  expect(violations).toEqual([]);
+  const response = await page.request.get(appBaseURL);
+  expect(response.headers()['x-content-type-options']).toBe('nosniff');
+  expect(response.headers()['x-frame-options']).toBe('SAMEORIGIN');
+  expect(response.headers()['content-security-policy']).toContain(
+    "script-src 'self'",
+  );
+  await page.evaluate(() => {
+    const script = document.createElement('script');
+    script.textContent = 'window.__inlineXssExecuted = true';
+    document.body.append(script);
+  });
+  expect(
+    await page.evaluate(() => (window as any).__inlineXssExecuted),
+  ).toBeUndefined();
+  expect(violations.length).toBeGreaterThan(0);
 });

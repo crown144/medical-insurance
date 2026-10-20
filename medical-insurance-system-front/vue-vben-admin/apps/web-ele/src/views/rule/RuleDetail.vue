@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Page, VbenModal } from '@vben/common-ui';
+import SourceText from './SourceText.vue';
 
 import {
   CircleCheck,
@@ -150,7 +151,6 @@ const fetchData = async () => {
       search: keyword.value, // 搜索关键词
     };
     const res = await getRuleList(params);
-    console.log('API Response:', res); // 调试日志
 
     if (res) {
       // 兼容 Django DRF 分页结构 { results: [] } 和直接数组结构
@@ -432,7 +432,7 @@ function openHtml(row: RuleRow) {
   htmlTitle.value = `来源HTML - ${row.drug_name}`;
   htmlContent.value =
     row.sourceHtml?.trim() ||
-    `<p style="color:#999">暂无 sourceHTML</p>`;
+    '暂无来源内容';
   htmlVisible.value = true;
 }
 
@@ -796,7 +796,7 @@ function formatParams(params: any) {
       :title="htmlTitle"
       destroy-on-close
     >
-      <div class="html-box" v-html="htmlContent"></div>
+      <SourceText :content="htmlContent" />
       <template #footer>
         <el-button @click="htmlVisible = false">关闭</el-button>
       </template>

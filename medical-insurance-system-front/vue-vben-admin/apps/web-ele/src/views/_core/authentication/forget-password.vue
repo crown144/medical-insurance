@@ -16,7 +16,7 @@ const formSchema = computed((): VbenFormSchema[] => {
     {
       component: 'VbenInput',
       componentProps: {
-        placeholder: 'example@example.com',
+        placeholder: $t('authentication.emailTip'),
       },
       fieldName: 'email',
       label: $t('authentication.email'),
@@ -28,9 +28,9 @@ const formSchema = computed((): VbenFormSchema[] => {
   ];
 });
 
-function handleSubmit(value: Recordable<any>) {
+function handleSubmit(_value: Recordable<any>) {
   // eslint-disable-next-line no-console
-  console.log('reset email:', value);
+  // Password reset requires the configured account service.
 }
 </script>
 

@@ -1,0 +1,6 @@
+# Apply with the original front/docker-compose.yml; preserve dist mount/ports.
+services:
+  yibao_front:
+    volumes:
+      - ./security/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./security/security-headers.conf:/etc/nginx/security-headers.conf:ro

@@ -2,6 +2,7 @@ import { createApp, watchEffect } from 'vue';
 
 import { registerAccessDirective } from '@vben/access';
 import { registerLoadingDirective } from '@vben/common-ui';
+import { addCollection } from '@vben/icons';
 import { preferences } from '@vben/preferences';
 import { initStores } from '@vben/stores';
 import '@vben/styles';
@@ -15,11 +16,14 @@ import { $t, setupI18n } from '#/locales';
 import { initComponentAdapter } from './adapter/component';
 import { initSetupVbenForm } from './adapter/form';
 import App from './app.vue';
+import offlineIcons from './offline-icons.json';
 import { router } from './router';
 
 import 'element-plus/dist/index.css';
 
 async function bootstrap(namespace: string) {
+  // Keep menu and shared UI icons available offline under connect-src 'self'.
+  for (const collection of offlineIcons) addCollection(collection);
   await initComponentAdapter();
   await initSetupVbenForm();
 
