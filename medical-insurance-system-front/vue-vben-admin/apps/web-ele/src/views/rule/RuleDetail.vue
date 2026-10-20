@@ -237,7 +237,11 @@ async function handleDelete(row: RuleRow) {
   try {
     await deleteRule(row.id);
     ElMessage.success('已删除');
-    fetchData(); // 刷新
+    // 删除当前页最后一条时回到上一页，避免请求已不存在的页码。
+    if (list.value.length === 1 && currentPage.value > 1) {
+      currentPage.value -= 1;
+    }
+    await fetchData();
   } catch (error) {
     ElMessage.error('删除失败');
   }
@@ -333,6 +337,8 @@ function validateAndNormalizeConditions() {
 
 async function save() {
   if (!form.description.trim()) return ElMessage.warning('请填写【原始描述】');
+  if (!(form.ruleCode || '').trim())
+    return ElMessage.warning('请填写【规则代码（Python）】');
 
   // 规则名：空则自动提取
   if (!form.drug_name.trim()) form.drug_name = extractRuleName(form.description);
@@ -719,7 +725,7 @@ function formatParams(params: any) {
           </el-tooltip>
         </el-form-item>
 
-        <el-form-item label="规则代码 (Python)">
+        <el-form-item label="规则代码（Python，必填）">
           <el-input
             v-model="form.ruleCode"
             type="textarea"

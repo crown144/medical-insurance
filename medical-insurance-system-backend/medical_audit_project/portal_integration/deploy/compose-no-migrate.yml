@@ -1,0 +1,9 @@
+# Apply alongside the EXISTING compose file; do not replace it.
+# Skip the image's entrypoint so an old entrypoint cannot run migrate on startup.
+# The confirmed services already specify gunicorn/celery in command.
+# Keep their command, working_dir, env_file, environment, mounts and image.
+services:
+  backend:
+    entrypoint: []
+  celery:
+    entrypoint: []

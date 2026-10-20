@@ -1,6 +1,7 @@
 import logging
 import uuid
 
+from django.conf import settings
 from django.db import transaction
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -21,6 +22,12 @@ class PortalActionView(APIView):
     action_type = None
 
     def post(self, request):
+        if getattr(settings, 'PORTAL_AUTH_MODE', 'existing') != 'synced':
+            return Response({
+                'code': 40901,
+                'message': '已有账号登录模式不支持门户用户权限同步；未修改本地账号或数据库。',
+                'data': None,
+            }, status=409)
         trace_id = str(request.headers.get('X-Trace-Id') or uuid.uuid4().hex)[:64]
         protocol = None
         payload = {}

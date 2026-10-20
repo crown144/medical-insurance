@@ -23,12 +23,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', 'django-insecure-=(snnc%&-_3k!umf&e*l(04fsuf(di@dgmn2-k^(g42*cm@$85')
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DJANGO_DEBUG', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
 
 
 # Application definition
@@ -96,7 +96,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': '555321',
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
@@ -110,7 +110,6 @@ DATABASES = {
         # 'ENGINE': 'django.db.backends.mysql',
         # 'NAME': 'medical_insurance_demo',
         # 'USER': 'root',
-        # 'PASSWORD': '555321',
         # 'HOST': '127.0.0.1',
         # 'PORT': '3306',
     }
@@ -121,6 +120,11 @@ SOURCE_MDC_ORG_NAME = os.environ.get('SOURCE_MDC_ORG_NAME', '')
 MEDICAL_AUDIT_SYSTEM_CODE = os.environ.get('MEDICAL_AUDIT_SYSTEM_CODE', 'YIBAO')
 MEDICAL_AUDIT_EVIDENCE_VERSION = os.environ.get('MEDICAL_AUDIT_EVIDENCE_VERSION', 'v20260710')
 MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE', str(60 * 60 * 12)))
+# Deployments with the existing schema must opt into schema upgrades explicitly.
+LEGACY_DATABASE_COMPATIBILITY = os.environ.get('LEGACY_DATABASE_COMPATIBILITY', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_AUTH_MODE = os.environ.get(
+    'PORTAL_AUTH_MODE', 'existing' if LEGACY_DATABASE_COMPATIBILITY else 'synced',
+).strip().lower()
 # Keep jicheng deployment variable names while sharing one portal identity flow.
 # Hostnames and app IDs must come from the deployment, never another environment.
 SSO_APP_ID = os.environ.get('SSO_APP_ID', '')
@@ -237,7 +241,7 @@ import os as _os
 # 注意：base_url 取 OpenAI 兼容的「基址」(以 /v1 结尾)，SDK 会自动拼接
 # /chat/completions；不要把完整的 .../chat/completions 路径填进来。
 # 自部署模型通常不校验密钥，默认占位 'EMPTY' 即可，仍可由环境变量覆盖。
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
 )
@@ -310,3 +314,6 @@ RULE_COMPILE_LLM_MAX_TOKENS = int(
 RULE_COMPILE_LLM_TIMEOUT = int(
     _os.environ.get('RULE_COMPILE_LLM_TIMEOUT', '120'),
 )
+
+CLUE_PUSH_BASE_URL = os.environ.get('CLUE_PUSH_BASE_URL', '')
+CLUE_PUSH_API_KEY = os.environ.get('CLUE_PUSH_API_KEY', '')

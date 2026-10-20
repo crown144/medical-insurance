@@ -30,7 +30,7 @@ class RuleFilter(django_filters.FilterSet):
 
 
 class RuleViewSet(viewsets.ModelViewSet):
-    queryset = Rule.objects.all().order_by('id')
+    queryset = Rule.objects.order_by('id')
     serializer_class = RuleSerializer
     pagination_class = OptionalPagination
     filter_backends = [
@@ -41,6 +41,28 @@ class RuleViewSet(viewsets.ModelViewSet):
     filterset_class = RuleFilter
     search_fields = ['drug_name', 'rule_id', 'description']
     ordering_fields = ['id', 'drug_name', 'created_at']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        if Rule._meta.get_field('is_deleted').concrete:
+            queryset = queryset.filter(is_deleted=False)
+        return queryset
+
+    def destroy(self, request, *args, **kwargs):
+        if not Rule._meta.get_field('is_deleted').concrete:
+            self.get_object()
+            return Response({
+                'code': 40901,
+                'message': '当前为旧数据库兼容模式，暂不支持软删除；可使用停用功能保留历史审核结果。',
+            }, status=status.HTTP_409_CONFLICT)
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        # 审核结果通过 PROTECT 外键引用规则。规则库中的“删除”应隐藏并
+        # 停用规则，同时保留历史审核结果所依赖的规则快照。
+        instance.status = False
+        instance.is_deleted = True
+        instance.save(update_fields=['status', 'is_deleted', 'updated_at'])
 
     @action(detail=False, methods=['post'], url_path='agenta/generate')
     def agenta_generate(self, request):

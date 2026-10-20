@@ -54,3 +54,5 @@ export async function downloadTaskResultCasesApi(
   );
   return response.data;
 }
+
+export const pushViolationCluesApi = (data: any[]) => baseRequestClient.post('/results/push-clues/', { data });

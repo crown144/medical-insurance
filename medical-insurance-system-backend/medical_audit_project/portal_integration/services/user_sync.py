@@ -5,7 +5,7 @@ from django.utils import timezone
 from accounts.models import AccountProfile
 from portal_integration.models import PortalUserBinding
 
-from .exceptions import PortalClientError, PortalMappingConflictError, PortalUserNotFoundError
+from .exceptions import PortalClientError, PortalMappingConflictError, PortalProtocolError, PortalUserNotFoundError
 from .portal_client import PortalClient
 
 
@@ -57,7 +57,7 @@ class PortalUserSyncService:
         detail = self.client.get_user_detail(portal_user_id)
         return self.sync_detail(detail, expected_id=portal_user_id)
 
-    def sync_detail(self, detail, *, expected_id=None):
+    def sync_detail(self, detail, *, expected_id=None, for_login=False):
         """Apply a verified detail response or a create/edit callback atomically.
 
         The immutable portal ID selects an existing binding even when its login
@@ -93,9 +93,10 @@ class PortalUserSyncService:
                     user = User.objects.select_for_update().get(pk=existing_binding.user_id)
                     if User.objects.filter(username=username).exclude(pk=user.pk).exists():
                         raise PortalMappingConflictError('新的门户登录名已被其他本地账号占用。')
-                    user.username = username
                 else:
                     user = User.objects.select_for_update().filter(username=username).first()
+                if for_login and user is not None and not user.is_active:
+                    raise PortalProtocolError('本地账号已停用，不能通过门户登录重新启用。', http_status=403)
                 if user and PortalUserBinding.objects.filter(user=user).exclude(
                     portal_user_id=portal_user_id,
                 ).exists():
@@ -105,6 +106,8 @@ class PortalUserSyncService:
                 if created:
                     user = User(username=username)
                     user.set_unusable_password()
+                elif existing_binding:
+                    user.username = username
 
                 full_name = str(_first_value(detail, 'fullname', 'real_name', 'name', 'display_name', 'nickname') or '').strip()
                 email = str(_first_value(detail, 'email', 'email_address') or '').strip()

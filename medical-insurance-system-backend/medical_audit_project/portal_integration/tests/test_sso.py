@@ -311,6 +311,21 @@ class SsoSettingsCompatibilityTests(SimpleTestCase):
         self.assertEqual(config['PORTAL_LOGIN_CALLBACK_URL'], 'https://insurance.example.test/api/sso/login')
         self.assertEqual(config['PORTAL_REQUEST_TIMEOUT_SECONDS'], 6)
 
+    def test_credentials_require_environment_values_and_have_no_shared_defaults(self):
+        config = self.load_settings({})
+        self.assertEqual(config['SECRET_KEY'], '')
+        self.assertEqual(config['DATABASES']['default']['PASSWORD'], '')
+        self.assertEqual(config['RULE_IMPORT_LLM_API_KEY'], '')
+        env = {
+            'DJANGO_SECRET_KEY': 'isolated-signing-test-value',
+            'DB_PASSWORD': 'isolated-database-test-value',
+            'RULE_IMPORT_LLM_API_KEY': 'isolated-llm-test-value',
+        }
+        config = self.load_settings(env)
+        self.assertEqual(config['SECRET_KEY'], env['DJANGO_SECRET_KEY'])
+        self.assertEqual(config['DATABASES']['default']['PASSWORD'], env['DB_PASSWORD'])
+        self.assertEqual(config['RULE_IMPORT_LLM_API_KEY'], env['RULE_IMPORT_LLM_API_KEY'])
+
     def test_explicit_portal_values_take_precedence_and_local_defaults_are_empty(self):
         config = self.load_settings({'PORTAL_APP_ID': 'current-app', 'SSO_APP_ID': 'legacy-app'})
         self.assertEqual(config['PORTAL_APP_ID'], 'current-app')
@@ -318,3 +333,7 @@ class SsoSettingsCompatibilityTests(SimpleTestCase):
         for key in ['PORTAL_APP_ID', 'PORTAL_BASE_URL', 'PORTAL_FRONTEND_URL', 'SSO_CAS_LOGOUT_URL', 'SSO_PORTAL_HOME_URL']:
             with self.subTest(key=key):
                 self.assertEqual(config[key], '')
+
+    def test_allowed_hosts_can_be_configured_for_the_deployment(self):
+        config = self.load_settings({'DJANGO_ALLOWED_HOSTS': ' 10.130.76.47, insurance.example.test, , localhost '})
+        self.assertEqual(config['ALLOWED_HOSTS'], ['10.130.76.47', 'insurance.example.test', 'localhost'])

@@ -46,12 +46,13 @@ class RuleSerializer(serializers.ModelSerializer):
             data['enabled'] = data.pop('status')
         if 'ruleCode' in data and 'rule_code' not in data:
             data['rule_code'] = data.pop('ruleCode')
-        if not data.get('ruleId'):
+        if self.instance is None and not data.get('ruleId'):
             from django.utils import timezone
 
             data['ruleId'] = f"R-{timezone.now().strftime('%Y%m%d%H%M%S%f')}"
-        data.setdefault('logicExpression', '')
-        data.setdefault('enabled', False)
+        if self.instance is None:
+            data.setdefault('logicExpression', '')
+            data.setdefault('enabled', False)
         return super().to_internal_value(data)
 
     def validate(self, attrs):

@@ -4,6 +4,7 @@ from datetime import timedelta
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import HttpResponseRedirect
 from django.utils import timezone
@@ -12,7 +13,8 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from accounts.auth import build_access_token, has_portal_access, profile_payload
+from accounts.auth import build_access_token, has_portal_access, portal_expiry_reached, profile_payload
+from accounts.models import AccountProfile
 from medical_audit_project.sso import logout_config
 from .models import PortalLoginCode
 from .services.exceptions import PortalClientError, PortalIntegrationError, PortalProtocolError
@@ -98,17 +100,35 @@ class PortalSsoEntryView(APIView):
             return error_response(exc)
 
 
-def login_result(user):
+def login_result(user, *, portal_expired_at=None):
     if not user.is_active or not has_portal_access(user):
         raise PortalProtocolError('账号已停用、移除或应用权限已过期。', http_status=403)
     profile = user.audit_profile
-    token = build_access_token(user)
+    token = build_access_token(user, portal_expired_at=portal_expired_at)
     return {'code': 0, 'result': {'accessToken': token, 'token': token, **profile_payload(profile)}, 'message': '登录成功'}
 
 
 def ticket_user(ticket, appid):
     detail = PortalClient().validate_ticket(ticket, appid)
-    binding = PortalUserSyncService().sync_detail(detail, expected_id=detail['id'])
+    if settings.PORTAL_AUTH_MODE == 'existing':
+        if detail.get('status') != 1 or portal_expiry_reached(detail.get('expired')):
+            raise PortalProtocolError('门户账号已停用或过期。', http_status=403)
+        try:
+            profile = AccountProfile.objects.select_related('user').get(
+                user__username=detail['username'], user__is_active=True,
+            )
+        except AccountProfile.DoesNotExist as exc:
+            raise PortalProtocolError('请先开通同名本地账号和医保角色；当前模式不会自动创建账号。', http_status=403) from exc
+        user = profile.user
+        # MySQL may compare usernames without case or trailing-space sensitivity.
+        # A portal identity must match the stored login name exactly.
+        if user.username != detail['username']:
+            raise PortalProtocolError('门户登录名与本地账号不完全一致，请核对账号映射。', http_status=403)
+        user._portal_expired_at = detail['expired']
+        return user
+    if settings.PORTAL_AUTH_MODE != 'synced':
+        raise PortalClientError('PORTAL_AUTH_MODE 必须为 existing 或 synced。')
+    binding = PortalUserSyncService().sync_detail(detail, expected_id=detail['id'], for_login=True)
     return binding.user
 
 
@@ -132,6 +152,8 @@ class PortalSsoLoginView(APIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
+            if settings.PORTAL_AUTH_MODE == 'existing' and data.get('code'):
+                raise PortalProtocolError('当前模式不使用数据库交换码，请从门户重新进入。')
             # The frontend validates callbacks itself. Backend callbacks validate
             # before exchanging tickets, so no one-time credential is wasted.
             if data.get('code'):
@@ -145,7 +167,8 @@ class PortalSsoLoginView(APIView):
                     result = login_result(handoff.user)
                     handoff.delete()
             else:
-                result = login_result(ticket_user(data['ticket'], data['appid']))
+                user = ticket_user(data['ticket'], data['appid'])
+                result = login_result(user, portal_expired_at=getattr(user, '_portal_expired_at', None))
             return Response(result, headers={'Cache-Control': 'no-store'})
         except PortalIntegrationError as exc:
             return error_response(exc)
@@ -165,6 +188,16 @@ class PortalSsoCallbackView(APIView):
         try:
             base = frontend_url()
             callback = validate_callback(data.get('callback', ''))
+            if settings.PORTAL_AUTH_MODE == 'existing':
+                if not settings.PORTAL_APP_ID or data['appid'] != settings.PORTAL_APP_ID:
+                    raise PortalProtocolError('门户应用 ID 不匹配。')
+                # The SPA exchanges this ticket exactly once; do not consume it
+                # here or write a handoff row in the production database.
+                query = urlencode({'ticket': data['ticket'], 'appid': data['appid'], 'callback': callback})
+                response = HttpResponseRedirect(f'{base}/#/auth/sso?{query}')
+                response['Cache-Control'] = 'no-store'
+                response['Referrer-Policy'] = 'no-referrer'
+                return response
             user = ticket_user(data['ticket'], data['appid'])
             login_result(user)
             code = secrets.token_urlsafe(32)
