@@ -24,7 +24,10 @@ class Command(BaseCommand):
         if mode not in ('existing', 'synced'):
             errors.append('PORTAL_AUTH_MODE 必须为 existing 或 synced。')
         if mode == 'existing':
-            warnings.append('已有账号登录模式：只读取同名有效本地账号；不自动创建用户，不使用门户绑定/交换码表，不支持权限同步回调。')
+            if getattr(settings, 'PORTAL_AUTO_CREATE_USERS', False):
+                warnings.append('同名账号自动开通模式：验票通过后在现有用户表和角色表创建普通用户；不修改表结构，不使用门户绑定/交换码表，不支持权限同步回调。')
+            else:
+                warnings.append('已有账号登录模式：只读取同名有效本地账号；不自动创建用户，不使用门户绑定/交换码表，不支持权限同步回调。')
         parsed_urls = {}
         required_urls = ['PORTAL_BASE_URL', 'PORTAL_FRONTEND_URL', 'PORTAL_LOGIN_CALLBACK_URL']
         if not options['ticket_callback_only']:

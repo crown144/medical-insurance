@@ -18,12 +18,14 @@ from django.core.management import call_command
 from django.db import connection, models
 from django.db.migrations.executor import MigrationExecutor
 from django.db.migrations.state import ModelState
+from django.db.models.query import QuerySet
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APITransactionTestCase
 
 from accounts.auth import build_access_token
 from accounts.models import AccountProfile
+from portal_integration.services.exceptions import PortalProtocolError
 from results.models import Result
 from rules.models import Rule
 from tasks.models import Task
@@ -39,6 +41,10 @@ DETAIL = {
 VALIDATE = 'portal_integration.services.portal_client.PortalClient.validate_ticket'
 FRONTEND = 'https://10.130.76.47:8088/yibao'
 WRITES = re.compile(r'^\s*(?:INSERT|UPDATE|DELETE|REPLACE|ALTER|CREATE|DROP|TRUNCATE)\b', re.I)
+ACCOUNT_INSERTS = re.compile(
+    r'^\s*INSERT\s+INTO\s+["`]?(?:auth_user|accounts_accountprofile)["`]?\s*\(',
+    re.I,
+)
 
 
 @skipUnless(
@@ -51,6 +57,7 @@ WRITES = re.compile(r'^\s*(?:INSERT|UPDATE|DELETE|REPLACE|ALTER|CREATE|DROP|TRUN
     PORTAL_FRONTEND_URL=FRONTEND,
     PORTAL_CAS_LOGIN_URL='http://10.130.76.194/ucenter/uinfo/cas/js/login',
     PORTAL_LOGIN_CALLBACK_URL=f'{FRONTEND}/#/auth/sso',
+    PORTAL_AUTO_CREATE_USERS=False,
 )
 class ExistingSchemaTests(APITransactionTestCase):
     """The application sees the same absent tables/column as the old server."""
@@ -103,7 +110,7 @@ class ExistingSchemaTests(APITransactionTestCase):
         )
 
     @contextmanager
-    def compatible_queries(self, *, allow_rule_writes=False):
+    def compatible_queries(self, *, allow_rule_writes=False, allow_account_inserts=False):
         with CaptureQueriesContext(connection) as captured:
             yield captured
         for query in captured:
@@ -111,6 +118,8 @@ class ExistingSchemaTests(APITransactionTestCase):
             self.assertNotIn('portal_integration_', sql.lower(), sql)
             self.assertNotIn('is_deleted', sql.lower(), sql)
             if WRITES.match(sql):
+                if allow_account_inserts and ACCOUNT_INSERTS.match(sql):
+                    continue
                 self.assertTrue(allow_rule_writes, sql)
                 self.assertIn('rules_rule', sql.lower(), sql)
 
@@ -200,6 +209,181 @@ class ExistingSchemaTests(APITransactionTestCase):
         before = self.account_snapshot()
         with self.compatible_queries():
             self.assertEqual(self.login().status_code, 403)
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE, return_value={
+        **DETAIL, 'username': 'new-portal-user',
+        'role': 'admin', 'roles': ['admin'], 'is_staff': True, 'is_superuser': True,
+    })
+    def test_auto_create_provisions_only_a_normal_account_and_reuses_it_on_retry(self, validate):
+        before = self.account_snapshot()
+        with self.compatible_queries(allow_account_inserts=True):
+            response = self.login()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['result']['roles'], ['normal'])
+            user = get_user_model().objects.get(username='new-portal-user')
+            self.assertTrue(user.is_active)
+            self.assertFalse(user.is_staff)
+            self.assertFalse(user.is_superuser)
+            self.assertFalse(user.has_usable_password())
+            self.assertEqual(user.audit_profile.role, AccountProfile.Role.NORMAL)
+            self.assertEqual(get_user_model().objects.count(), len(before[0]) + 1)
+            self.assertEqual(AccountProfile.objects.count(), len(before[1]) + 1)
+        after_first_login = self.account_snapshot()
+        with self.compatible_queries():
+            retry = self.login()
+            self.assertEqual(retry.status_code, 200)
+            self.assertEqual(retry.data['result']['userId'], str(user.pk))
+            self.client.credentials(
+                HTTP_AUTHORIZATION=f"Bearer {retry.data['result']['accessToken']}",
+            )
+            self.assertEqual(self.client.get('/api/user/info').status_code, 200)
+            self.assertEqual(self.client.get('/api/tasks/').status_code, 200)
+        self.assertEqual(self.account_snapshot(), after_first_login)
+        self.assertEqual(after_first_login[0][0], before[0][0])
+        self.assertEqual(after_first_login[1][0], before[1][0])
+        self.assertEqual(validate.call_count, 2)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE, return_value={**DETAIL, 'username': 'existing-without-profile'})
+    def test_auto_create_adds_missing_normal_profile_without_overwriting_existing_user(self, validate):
+        user = get_user_model().objects.create_user(
+            username='existing-without-profile', password='keep-this-password',
+            first_name='已有名字', last_name='已有姓氏', email='keep@example.test',
+        )
+        before_user = get_user_model().objects.filter(pk=user.pk).values().get()
+        profiles_before = AccountProfile.objects.count()
+        with self.compatible_queries(allow_account_inserts=True):
+            response = self.login()
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.data['result']['roles'], ['normal'])
+            self.assertEqual(AccountProfile.objects.get(user=user).role, AccountProfile.Role.NORMAL)
+            self.assertEqual(AccountProfile.objects.count(), profiles_before + 1)
+        self.assertEqual(get_user_model().objects.filter(pk=user.pk).values().get(), before_user)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password('keep-this-password'))
+        after_first_login = self.account_snapshot()
+        with self.compatible_queries():
+            self.assertEqual(self.login().status_code, 200)
+        self.assertEqual(self.account_snapshot(), after_first_login)
+        self.assertEqual(validate.call_count, 2)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_keeps_existing_developer_and_admin_passwords_roles_and_names(self, validate):
+        admin = get_user_model().objects.create_user(
+            username='existing-app-admin', password='admin-password', first_name='本地管理员',
+        )
+        AccountProfile.objects.create(user=admin, role=AccountProfile.Role.ADMIN)
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            for user, role, name in [
+                (self.user, 'developer', '本地姓名'), (admin, 'admin', '本地管理员'),
+            ]:
+                with self.subTest(role=role):
+                    validate.return_value = {**DETAIL, 'username': user.username}
+                    response = self.login()
+                    self.assertEqual(response.status_code, 200)
+                    self.assertEqual(response.data['result']['roles'], [role])
+                    self.assertEqual(response.data['result']['realName'], name)
+        self.assertEqual(self.account_snapshot(), before)
+        self.user.refresh_from_db()
+        admin.refresh_from_db()
+        self.assertTrue(self.user.check_password('existing-password'))
+        self.assertTrue(admin.check_password('admin-password'))
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_cannot_reactivate_inactive_users_or_repair_their_roles(self, validate):
+        inactive = get_user_model().objects.create_user(
+            username='disabled-with-profile', password='keep-disabled-password', is_active=False,
+        )
+        AccountProfile.objects.create(user=inactive, role=AccountProfile.Role.DEVELOPER)
+        get_user_model().objects.create_user(username='disabled-no-profile', is_active=False)
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            for username in ['disabled-with-profile', 'disabled-no-profile']:
+                with self.subTest(username=username):
+                    validate.return_value = {**DETAIL, 'username': username}
+                    self.assertEqual(self.login().status_code, 403)
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_rejects_portal_disabled_or_expired_users_before_any_insert(self, validate):
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            for username in [self.user.username, 'unknown-invalid-user']:
+                for changes in [
+                    {'status': 2}, {'expired': int(time.time()) - 10},
+                    {'expired': int((time.time() - 10) * 1000)},
+                    {'expired': None}, {'expired': True}, {'expired': -2},
+                ]:
+                    with self.subTest(username=username, changes=changes):
+                        validate.return_value = {**DETAIL, 'username': username, **changes}
+                        self.assertEqual(self.login().status_code, 403)
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE, side_effect=PortalProtocolError('无效票据'))
+    def test_auto_create_does_not_provision_any_account_when_ticket_validation_fails(self, validate):
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            self.assertEqual(self.login().status_code, 401)
+        validate.assert_called_once_with('ST-existing', 'existing-app')
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch('requests.Session.get')
+    def test_auto_create_does_not_provision_for_another_app_id(self, portal_get):
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            self.assertEqual(self.login(appid='another-app').status_code, 401)
+        portal_get.assert_not_called()
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_validates_empty_and_oversized_usernames_before_database_writes(self, validate):
+        max_length = get_user_model()._meta.get_field('username').max_length
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            for username in ['', ' \t\n ', 'x' * (max_length + 1)]:
+                with self.subTest(username=username):
+                    validate.return_value = {**DETAIL, 'username': username}
+                    self.assertIn(self.login().status_code, (400, 401, 403))
+        self.assertEqual(self.account_snapshot(), before)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_rejects_username_whitespace_without_creating_or_aliasing_accounts(self, validate):
+        before = self.account_snapshot()
+        with self.compatible_queries():
+            for username in ['  unknown-portal-user\t ', f' {self.user.username}\t']:
+                with self.subTest(username=username):
+                    validate.return_value = {**DETAIL, 'username': username}
+                    self.assertEqual(self.login().status_code, 403)
+                    self.assertEqual(self.login().status_code, 403)
+        self.assertEqual(self.account_snapshot(), before)
+        self.assertEqual(validate.call_count, 4)
+
+    @override_settings(PORTAL_AUTO_CREATE_USERS=True)
+    @patch(VALIDATE)
+    def test_auto_create_rejects_case_insensitive_database_alias_without_changing_existing_account(self, validate):
+        username = self.user.username.upper()
+        validate.return_value = {**DETAIL, 'username': username}
+        before = self.account_snapshot()
+        original_get = QuerySet.get
+
+        def get_with_case_insensitive_username(queryset, *args, **kwargs):
+            if queryset.model is get_user_model() and kwargs.get('username') == username:
+                return self.user
+            return original_get(queryset, *args, **kwargs)
+
+        with patch.object(QuerySet, 'get', get_with_case_insensitive_username):
+            with self.compatible_queries():
+                self.assertEqual(self.login().status_code, 403)
         self.assertEqual(self.account_snapshot(), before)
 
     @patch(VALIDATE)

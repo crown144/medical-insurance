@@ -1,6 +1,8 @@
 # 统一门户用户权限集成
 
-默认部署使用 `PORTAL_AUTH_MODE=existing`、`LEGACY_DATABASE_COMPATIBILITY=true`：门户验票后只匹配已有的同名有效账号，保留原密码和角色，不创建用户、门户绑定或医院，不查询新增门户表，不要求执行迁移。权限同步回调返回明确的禁用提示。真实 302 地址、可合入现有 `.env` 的配置及防止镜像自动迁移的启动覆盖见 [部署说明](deploy/README.md)。
+默认部署使用 `PORTAL_AUTH_MODE=existing`、`LEGACY_DATABASE_COMPATIBILITY=true`：门户验票后匹配已有的同名有效账号，保留原密码和角色，不查询新增门户表，不要求执行迁移。可通过默认关闭的 `PORTAL_AUTO_CREATE_USERS` 显式允许在现有用户表内自动开户；本次部署文件 `deploy/portal-302.env` 已按用户要求设为 `true`。权限同步回调返回明确的禁用提示。真实 302 地址、可合入现有 `.env` 的配置及防止镜像自动迁移的启动覆盖见 [部署说明](deploy/README.md)。
+
+`PORTAL_AUTO_CREATE_USERS` 仅在 `existing` 模式生效。真实门户票据及有效性校验通过后，本地没有同名账号时，使用现有 `auth_user` 和 `AccountProfile` 表创建 `normal` 普通账号，密码不可用，非 staff、非 superuser；已有账号缺少角色记录时只补 `normal`。不创建门户绑定、医院或新表，不改表结构。已有密码、姓名、角色、激活状态保持不变，停用账号拒绝登录，不自动恢复或提权。关闭开关则不自动开户，也不补写角色记录。此模式仍不提供用户/权限同步回调和门户撤权实时同步。
 
 以下账号同步、权限回调和数据库交换码能力仅适用于显式选择 `PORTAL_AUTH_MODE=synced` 且数据库结构已支持的环境，本次旧库部署不启用。已有账号模式的后端 GET 回调只将未消费票据送往前端过渡页，由前端 POST 完成一次验票，不使用数据库交换码。
 
@@ -23,7 +25,7 @@
 
 严格使用 3.4 的 `GET /api/security-manage-permission/app/cas/serviceValidate`，`ticket` 和 `appid` 放 query，`Content-Type: application/json`，响应为明文且成功 code 为整数 0；与权限回调的 SM2 加密无关。文档响应字段表包含 `expired`，示例却遗漏；实际响应遗漏时，补查 3.7.1 加密用户详情并验证，不能将缺失有效期当成永不过期。这种部署仍需配置真实门户/应用密钥。appid 必须匹配已注册应用。
 
-首次门户登录创建 normal 账号，密码设为不可用；已绑定用户沿用原角色及密码。新登录不能恢复已停用或移除的应用权限，门户全局禁用及过期账号也不签发令牌。本地用户名/密码登录保留。
+`synced` 模式首次门户登录创建 normal 账号，密码设为不可用；已绑定用户沿用原角色及密码。`existing` 模式按上述 `PORTAL_AUTO_CREATE_USERS` 开关处理。新登录不能恢复已停用或移除的应用权限，门户全局禁用及过期账号也不签发令牌。本地用户名/密码登录保留。
 
 统一退出配置 `SSO_CAS_LOGOUT_URL`、`SSO_LOGOUT_CALLBACK_URL` 和 `SSO_PORTAL_HOME_URL`，并配置应用 ID、医保前端地址及已注册登录回调。`GET /api/portal/sso/config` 返回 `logoutUrl` 和 `portalHomeUrl`；退出 URL 的 `service` 默认保持 jicheng 行为，使用已注册的登录回调 `PORTAL_LOGIN_CALLBACK_URL`。如果门户部署要求其他 service（例如退出回调），通过 `SSO_LOGOUT_SERVICE_URL` 显式覆盖；此差异需与真实门户确认。CAS 地址原有的其他查询参数会保留。浏览器到达 `GET /api/sso/logout?status=server_logout&appid=...&callback=...` 时，后端校验应用 ID、状态和配置的门户首页，再 302 到 `/#/auth/sso-logout` 清理前端状态。未配置退出服务时，退出保留本地登录页回退，不能跳转到其他环境的硬编码门户地址。退出回调无需医保 token；停用、移除和过期仍会即时阻断原 token。普通浏览器退出清理本地令牌，不增加服务端令牌撤销机制，已复制的有效令牌仍受其有效期和账号状态限制。
 
@@ -70,6 +72,9 @@ web-ele 两个请求客户端都携带 `Authorization: Bearer <token>` 和文档
 
 | 变量 | 说明 |
 |---|---|
+| `PORTAL_AUTH_MODE` | 默认 `existing`；`synced` 需要完整门户表及迁移支持 |
+| `PORTAL_AUTO_CREATE_USERS` | 默认 `false`，仅 `existing` 模式生效；开启后在现有用户表为已验票身份创建普通账号或补齐缺失的 normal 角色，不改表结构 |
+| `LEGACY_DATABASE_COMPATIBILITY` | 默认 `true`，兼容现有旧表结构，不自动执行迁移 |
 | `PORTAL_BASE_URL` | 门户 API 基址 |
 | `PORTAL_APP_ID` | 应用 ID |
 | `PORTAL_USER_DETAIL_PATH` | 默认 `/api/security-manage-permission/v1/user/info` |
@@ -98,7 +103,7 @@ v1.9 允许将注册的 action 配置为明文，但本实现默认拒绝未验�
 
 建号、资料/权限变更、成功审计与成功响应签名都在同一事务中；任何环节失败都会回滚。动作重复调用不会额外建号或错误恢复旧角色。上游超时、无效上游响应及数据库并发唯一约束冲突返回 HTTP 503，使门户按 3.6 的 HTTP 失败机制进行重试；参数等业务错误用非零 code 表示。不能仅返回 HTTP 200 的错误 code 来期待门户重试。
 
-发布前重建完整后端依赖，并执行：
+`existing` 旧库部署不执行迁移，启用自动开户也不需要迁移；按 [部署说明](deploy/README.md) 禁用旧镜像启动时的自动迁移。下面的迁移命令仅用于另行批准了表结构变更的 `synced` 模式发布：
 
 ```bash
 python manage.py migrate --plan

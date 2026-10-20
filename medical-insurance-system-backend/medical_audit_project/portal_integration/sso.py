@@ -19,6 +19,7 @@ from medical_audit_project.sso import logout_config
 from .models import PortalLoginCode
 from .services.exceptions import PortalClientError, PortalIntegrationError, PortalProtocolError
 from .services.portal_client import PortalClient
+from .services.local_accounts import local_account_for_portal
 from .services.user_sync import PortalUserSyncService
 
 
@@ -113,6 +114,10 @@ def ticket_user(ticket, appid):
     if settings.PORTAL_AUTH_MODE == 'existing':
         if detail.get('status') != 1 or portal_expiry_reached(detail.get('expired')):
             raise PortalProtocolError('门户账号已停用或过期。', http_status=403)
+        if getattr(settings, 'PORTAL_AUTO_CREATE_USERS', False):
+            user = local_account_for_portal(detail)
+            user._portal_expired_at = detail['expired']
+            return user
         try:
             profile = AccountProfile.objects.select_related('user').get(
                 user__username=detail['username'], user__is_active=True,

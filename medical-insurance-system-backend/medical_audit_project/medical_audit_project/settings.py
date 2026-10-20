@@ -125,6 +125,7 @@ LEGACY_DATABASE_COMPATIBILITY = os.environ.get('LEGACY_DATABASE_COMPATIBILITY', 
 PORTAL_AUTH_MODE = os.environ.get(
     'PORTAL_AUTH_MODE', 'existing' if LEGACY_DATABASE_COMPATIBILITY else 'synced',
 ).strip().lower()
+PORTAL_AUTO_CREATE_USERS = os.environ.get('PORTAL_AUTO_CREATE_USERS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
 # Keep jicheng deployment variable names while sharing one portal identity flow.
 # Hostnames and app IDs must come from the deployment, never another environment.
 SSO_APP_ID = os.environ.get('SSO_APP_ID', '')
