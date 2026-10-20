@@ -15,7 +15,7 @@ import { TaskStatus } from '../../api/model/taskModel';
 import {
   deleteTaskApi,
   executeTaskApi,
-  getDownloadUrl,
+  downloadTaskReportApi,
   getTaskListApi,
 } from '../../api/task';
 // Extended interface for frontend display
@@ -204,13 +204,13 @@ const downloadReport = (task: TaskItemDisplay) => {
     inputPattern: /^\d+$/,
     inputErrorMessage: '期数必须为数字',
   })
-    .then(({ value }) => {
-      const url = getDownloadUrl(task.id, value);
-      window.open(url, '_blank');
-      ElMessage.success('报告生成请求已发送，请等待下载...');
+    .then(async ({ value }) => {
+      await downloadTaskReportApi(task.id, value);
+      ElMessage.success('报告已下载');
     })
-    .catch(() => {
-      ElMessage.info('已取消生成报告');
+    .catch((error) => {
+      if (error === 'cancel' || error === 'close') return;
+      ElMessage.error('报告下载失败，请确认登录状态后重试');
     });
 };
 

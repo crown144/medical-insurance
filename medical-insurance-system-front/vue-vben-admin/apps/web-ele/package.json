@@ -11,12 +11,12 @@
   "license": "MIT",
   "author": {
     "name": "vben",
-    "email": "ann.vben@gmail.com",
     "url": "https://github.com/anncwb"
   },
   "type": "module",
   "scripts": {
     "build": "pnpm vite build --mode production",
+    "build:portal": "pnpm vite build --mode portal",
     "build:analyze": "pnpm vite build --mode analyze",
     "dev": "pnpm vite --mode development",
     "preview": "vite preview",

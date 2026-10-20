@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd -- "$(dirname -- "$0")"
+if command -v docker-compose >/dev/null 2>&1; then
+  exec docker-compose -p yibao-backend-1012 -f docker-compose.yml -f compose-no-migrate.yml "$@"
+fi
+exec docker compose -p yibao-backend-1012 -f docker-compose.yml -f compose-no-migrate.yml "$@"

@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd -- "$(dirname -- "$0")"
+project=$(docker inspect -f '{{ index .Config.Labels "com.docker.compose.project" }}' yibao_front_0830)
+if [[ -z "$project" || "$project" == '<no value>' ]]; then
+  echo 'Cannot determine existing frontend Compose project; stop and inspect labels.' >&2
+  exit 1
+fi
+if command -v docker-compose >/dev/null 2>&1; then
+  exec docker-compose -p "$project" -f docker-compose.yml -f security/compose-security.yml "$@"
+fi
+exec docker compose -p "$project" -f docker-compose.yml -f security/compose-security.yml "$@"

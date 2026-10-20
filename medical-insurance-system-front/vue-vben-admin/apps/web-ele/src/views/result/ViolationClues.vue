@@ -4,7 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { Download, Refresh, Search, View } from '@element-plus/icons-vue';
 import { ElMessage } from 'element-plus';
 
-import { getViolationCluesApi } from '#/api/result';
+import { getViolationCluesApi, pushViolationCluesApi } from '#/api/result';
 
 const loading = ref(false);
 const total = ref(0);
@@ -15,6 +15,10 @@ const dialogVisible = ref(false);
 const clues = ref<Record<string, any>[]>([]);
 const selectedRows = ref<Record<string, any>[]>([]);
 const tableRef = ref();
+const pushVisible = ref(false);
+const pushing = ref(false);
+const pushSteps = ref<any[]>([]);
+const pushResult = ref<any>(null);
 const form = reactive({
   taskId: '',
   hospitalizationId: '',
@@ -109,6 +113,17 @@ function clearSelection() {
   selectedRows.value = [];
 }
 
+async function pushSelectedClues() {
+  const selectedClues = selectedRows.value
+    .map((row) => clues.value.find((item) => item.externalClueId === row.externalClueId))
+    .filter((item): item is Record<string, any> => Boolean(item));
+  if (!selectedClues.length) return ElMessage.warning('请先勾选需要推送的线索。');
+  pushVisible.value = true; pushing.value = true; pushSteps.value = []; pushResult.value = null;
+  try { const response: any = await pushViolationCluesApi(selectedClues); pushSteps.value = response.data?.steps || response.steps || []; pushResult.value = response.data?.result || response.result; if (response.data?.ok || response.ok) ElMessage.success('线索推送成功'); else ElMessage.error('线索推送失败'); }
+  catch (error: any) { pushSteps.value = error?.response?.data?.steps || []; ElMessage.error(error?.message || '推送失败'); }
+  finally { pushing.value = false; }
+}
+
 function downloadSelectedRequestBody() {
   const selectedClues = selectedRows.value
     .map((row) => clues.value.find((item) => item.externalClueId === row.externalClueId))
@@ -172,6 +187,7 @@ onMounted(loadClues);
         <el-button :icon="Download" type="success" :disabled="selectedRows.length === 0" @click="downloadSelectedRequestBody">
           下载已选请求体（{{ selectedRows.length }} 条）
         </el-button>
+        <el-button type="danger" :disabled="selectedRows.length === 0" :loading="pushing" @click="pushSelectedClues">推送已选线索（{{ selectedRows.length }} 条）</el-button>
         <el-button @click="selectCurrentPage">全选当前页</el-button>
         <el-button :disabled="selectedRows.length === 0" @click="clearSelection">清空选择</el-button>
       </div>
@@ -223,6 +239,13 @@ onMounted(loadClues);
         />
       </div>
     </div>
+
+    <el-dialog v-model="pushVisible" title="线索推送流程" width="620px">
+      <el-steps direction="vertical" :active="pushSteps.length" finish-status="success">
+        <el-step v-for="step in pushSteps" :key="step.name" :title="step.name" :description="step.message" :status="step.ok ? 'success' : 'error'" />
+      </el-steps>
+      <pre v-if="pushResult" class="json-preview">{{ JSON.stringify(pushResult, null, 2) }}</pre>
+    </el-dialog>
 
     <el-dialog v-model="dialogVisible" title="结构化违规结果线索 JSON" width="860px">
       <pre class="json-preview">{{ JSON.stringify(selectedClue, null, 2) }}</pre>

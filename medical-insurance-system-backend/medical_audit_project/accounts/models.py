@@ -6,6 +6,7 @@ class AccountProfile(models.Model):
     class Role(models.TextChoices):
         NORMAL = 'normal', '普通用户'
         DEVELOPER = 'developer', '开发用户'
+        ADMIN = 'admin', '应用管理员'
 
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,

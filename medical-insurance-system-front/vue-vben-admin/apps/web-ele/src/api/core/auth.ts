@@ -25,6 +25,30 @@ export async function loginApi(data: AuthApi.LoginParams) {
   return baseRequestClient.post<any>('/auth/login', data);
 }
 
+export interface PortalLoginParams {
+  appid?: string;
+  code?: string;
+  ticket?: string;
+}
+
+export async function portalLoginApi(data: PortalLoginParams) {
+  return baseRequestClient.post<any>('/sso/login', data);
+}
+
+export interface PortalSsoConfig {
+  authorizeUrl: string;
+  enabled: boolean;
+  logoutUrl?: string;
+  portalHomeUrl?: string;
+}
+
+export async function portalEntryApi(callback: string) {
+  const response = await baseRequestClient.get('/portal/sso/config', {
+    params: { callback },
+  });
+  return response.data.result as PortalSsoConfig;
+}
+
 export async function refreshTokenApi() {
   return baseRequestClient.post<AuthApi.RefreshTokenResult>('/auth/refresh', {
     withCredentials: true,

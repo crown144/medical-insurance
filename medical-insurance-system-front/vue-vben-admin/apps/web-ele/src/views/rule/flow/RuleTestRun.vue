@@ -11,10 +11,7 @@ import {
 import { ElLoading, ElMessage, ElMessageBox } from 'element-plus';
 import { storeToRefs } from 'pinia';
 
-import {
-  importGeneratedRuleApi,
-  runGeneratedRuleApi,
-} from '../../../api/rule';
+import { importGeneratedRuleApi, runGeneratedRuleApi } from '../../../api/rule';
 import { useRuleFlowStore } from '../../../store/modules/ruleFlow';
 
 const flowStore = useRuleFlowStore();
@@ -31,71 +28,11 @@ const highlightPaths = ref<Set<string>>(new Set());
 
 // ================== JSON 高亮渲染核心逻辑 ==================
 
-const escapeHtml = (text: any): string => {
-  if (text === null || text === undefined) return '';
-  const map: Record<string, string> = {
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#039;',
-  };
-  return String(text).replaceAll(/[&<>"']/g, (m) => map[m] ?? m);
-};
-
-// 递归将 JSON 转为带高亮的 HTML
-const jsonToHtml = (
-  data: any,
-  currentPath: string = '$',
-  indentLevel: number = 0,
-): string => {
-  const indent = '  '.repeat(indentLevel);
-  const nextIndent = '  '.repeat(indentLevel + 1);
-
-  let content = '';
-  if (data === null) content = `<span class="json-null">null</span>`;
-  else if (typeof data === 'string')
-    content = `<span class="json-string">"${escapeHtml(data)}"</span>`;
-  else if (typeof data === 'number')
-    content = `<span class="json-number">${data}</span>`;
-  else if (typeof data === 'boolean')
-    content = `<span class="json-boolean">${data}</span>`;
-  else if (Array.isArray(data)) {
-    if (data.length === 0) return '[]';
-    const items = data
-      .map((item, index) => {
-        const itemPath = `${currentPath}[${index}]`;
-        return `${nextIndent}${jsonToHtml(item, itemPath, indentLevel + 1)}`;
-      })
-      .join(',\n');
-    return `[\n${items}\n${indent}]`;
-  } else if (typeof data === 'object') {
-    const entries = Object.entries(data);
-    if (entries.length === 0) return '{}';
-    const items = entries
-      .map(([key, value]) => {
-        const keyHtml = `<span class="json-key">"${key}"</span>`;
-        const itemPath = `${currentPath}.${key}`; // 简单路径构建
-        const valueHtml = jsonToHtml(value, itemPath, indentLevel + 1);
-        return `${nextIndent}${keyHtml}: ${valueHtml}`;
-      })
-      .join(',\n');
-    return `{\n${items}\n${indent}}`;
-  }
-
-  // 匹配高亮路径 (这里做简单的包含匹配模拟)
-  // 实际项目中可以使用 jsonpath 库来精确匹配
-  if (highlightPaths.value.has(currentPath)) {
-    return `<mark class="highlight-evidence">${content}</mark>`;
-  }
-  return content;
-};
-
 // 计算属性：生成的 HTML
 const displayJsonHtml = computed(() => {
   try {
     const data = JSON.parse(caseJsonText.value);
-    return jsonToHtml(data);
+    return jsonToHtml(data, '$', 0, highlightPaths.value);
   } catch {
     return `<span class="text-red-500">JSON 格式错误，无法渲染</span>`;
   }
@@ -176,7 +113,8 @@ const handleRun = async () => {
         } catch (error: any) {
           item.testStatus = 'finished';
           item.testResult = 'ERROR';
-          item.error = error?.response?.data?.message || error?.message || '规则执行失败';
+          item.error =
+            error?.response?.data?.message || error?.message || '规则执行失败';
         }
       }
     }
@@ -211,7 +149,10 @@ const handleImportSingle = async () => {
     const imported = await importGeneratedRuleApi({
       description: ruleText.value,
       drugName: '规则转换导入',
-      ruleCode: artifacts.value?.generated_code || runResult.value?.generated_code || '',
+      ruleCode:
+        artifacts.value?.generated_code ||
+        runResult.value?.generated_code ||
+        '',
       status: true,
       type: '智能转换',
     });
@@ -246,7 +187,10 @@ const handleImportBatch = async () => {
         const imported = await importGeneratedRuleApi({
           description: item.rule || item.ruleText || '',
           drugName: item.category || `批量规则${item.id}`,
-          ruleCode: item.artifacts?.generated_code || item.artifacts?.code_snippet || '',
+          ruleCode:
+            item.artifacts?.generated_code ||
+            item.artifacts?.code_snippet ||
+            '',
           ruleId: item.ruleId,
           status: true,
           type: item.category || '智能转换',
@@ -255,7 +199,8 @@ const handleImportBatch = async () => {
         importedIds.push(imported?.ruleId || imported?.id || `R-${item.id}`);
       } catch (error: any) {
         item.importStatus = 'error';
-        item.error = error?.response?.data?.message || error?.message || '规则入库失败';
+        item.error =
+          error?.response?.data?.message || error?.message || '规则入库失败';
       }
     }
     loading.close();

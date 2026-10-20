@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 
 import os
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
+from corsheaders.defaults import default_headers
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -21,12 +23,12 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-=(snnc%&-_3k!umf&e*l(04fsuf(di@dgmn2-k^(g42*cm@$85'
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', '')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [host.strip() for host in os.environ.get('DJANGO_ALLOWED_HOSTS', '').split(',') if host.strip()]
 
 
 # Application definition
@@ -37,6 +39,7 @@ INSTALLED_APPS = [
     'tasks',
     'results',
     'accounts',
+    'portal_integration',
     'cases',
     'sql_analysis',
     'repeat_charging',
@@ -60,6 +63,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'accounts.middleware.ApiAccessMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -92,7 +96,7 @@ DATABASES = {
         'ENGINE': 'django.db.backends.mysql',
         'NAME': 'medical_insurance',
         'USER': 'root',
-        'PASSWORD': '555321',
+        'PASSWORD': os.environ.get('DB_PASSWORD', ''),
         'HOST': '127.0.0.1',
         'PORT': '3306',
     },
@@ -106,7 +110,6 @@ DATABASES = {
         # 'ENGINE': 'django.db.backends.mysql',
         # 'NAME': 'medical_insurance_demo',
         # 'USER': 'root',
-        # 'PASSWORD': '555321',
         # 'HOST': '127.0.0.1',
         # 'PORT': '3306',
     }
@@ -117,6 +120,44 @@ SOURCE_MDC_ORG_NAME = os.environ.get('SOURCE_MDC_ORG_NAME', '')
 MEDICAL_AUDIT_SYSTEM_CODE = os.environ.get('MEDICAL_AUDIT_SYSTEM_CODE', 'YIBAO')
 MEDICAL_AUDIT_EVIDENCE_VERSION = os.environ.get('MEDICAL_AUDIT_EVIDENCE_VERSION', 'v20260710')
 MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE = int(os.environ.get('MEDICAL_AUDIT_AUTH_TOKEN_MAX_AGE', str(60 * 60 * 12)))
+# Deployments with the existing schema must opt into schema upgrades explicitly.
+LEGACY_DATABASE_COMPATIBILITY = os.environ.get('LEGACY_DATABASE_COMPATIBILITY', 'true').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_AUTH_MODE = os.environ.get(
+    'PORTAL_AUTH_MODE', 'existing' if LEGACY_DATABASE_COMPATIBILITY else 'synced',
+).strip().lower()
+PORTAL_AUTO_CREATE_USERS = os.environ.get('PORTAL_AUTO_CREATE_USERS', 'false').strip().lower() in {'1', 'true', 'yes', 'on'}
+# Keep jicheng deployment variable names while sharing one portal identity flow.
+# Hostnames and app IDs must come from the deployment, never another environment.
+SSO_APP_ID = os.environ.get('SSO_APP_ID', '')
+SSO_APP_BASE_URL = os.environ.get('SSO_APP_BASE_URL', '').rstrip('/')
+SSO_LOGIN_CALLBACK_URL = os.environ.get('SSO_LOGIN_CALLBACK_URL', '')
+SSO_LOGOUT_CALLBACK_URL = os.environ.get('SSO_LOGOUT_CALLBACK_URL', '')
+SSO_LOGOUT_SERVICE_URL = os.environ.get('SSO_LOGOUT_SERVICE_URL', '')
+SSO_SERVICE_VALIDATE_URL = os.environ.get('SSO_SERVICE_VALIDATE_URL', '')
+SSO_CAS_LOGOUT_URL = os.environ.get('SSO_CAS_LOGOUT_URL', '')
+SSO_PORTAL_HOME_URL = os.environ.get('SSO_PORTAL_HOME_URL', '')
+SSO_HTTP_TIMEOUT_SECONDS = float(os.environ.get('SSO_HTTP_TIMEOUT_SECONDS', '10'))
+_legacy_validate_url = urlsplit(SSO_SERVICE_VALIDATE_URL)
+PORTAL_BASE_URL = os.environ.get(
+    'PORTAL_BASE_URL', urlunsplit((_legacy_validate_url.scheme, _legacy_validate_url.netloc, '', '', '')),
+).rstrip('/')
+PORTAL_APP_ID = os.environ.get('PORTAL_APP_ID', SSO_APP_ID)
+PORTAL_ENCRYPT_ENABLED = os.environ.get('PORTAL_ENCRYPT_ENABLED', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_ALLOW_PLAINTEXT = os.environ.get('PORTAL_ALLOW_PLAINTEXT', '').strip().lower() in {'1', 'true', 'yes', 'on'}
+PORTAL_PUBLIC_KEY = os.environ.get('PORTAL_PUBLIC_KEY', '')
+PORTAL_APP_PUBLIC_KEY = os.environ.get('PORTAL_APP_PUBLIC_KEY', '')
+PORTAL_APP_PRIVATE_KEY = os.environ.get('PORTAL_APP_PRIVATE_KEY', '')
+PORTAL_USER_DETAIL_PATH = os.environ.get(
+    'PORTAL_USER_DETAIL_PATH',
+    '/api/security-manage-permission/v1/user/info',
+)
+PORTAL_REQUEST_TIMEOUT_SECONDS = float(os.environ.get('PORTAL_REQUEST_TIMEOUT_SECONDS', str(SSO_HTTP_TIMEOUT_SECONDS)))
+PORTAL_SSO_VALIDATE_PATH = os.environ.get(
+    'PORTAL_SSO_VALIDATE_PATH', _legacy_validate_url.path or '/api/security-manage-permission/app/cas/serviceValidate',
+)
+PORTAL_FRONTEND_URL = os.environ.get('PORTAL_FRONTEND_URL', SSO_APP_BASE_URL)
+PORTAL_CAS_LOGIN_URL = os.environ.get('PORTAL_CAS_LOGIN_URL', '')
+PORTAL_LOGIN_CALLBACK_URL = os.environ.get('PORTAL_LOGIN_CALLBACK_URL', SSO_LOGIN_CALLBACK_URL)
 INHOS_QUERY_MAX_MONTHS = int(os.environ.get('INHOS_QUERY_MAX_MONTHS', '3'))
 INHOS_QUERY_MAX_RESULTS = int(os.environ.get('INHOS_QUERY_MAX_RESULTS', '500'))
 INHOS_QUERY_TIMEOUT_MS = int(os.environ.get('INHOS_QUERY_TIMEOUT_MS', '120000'))
@@ -171,6 +212,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:5174",
     # 如果你有其他前端地址，也加进来
 ]
+CORS_ALLOW_HEADERS = (*default_headers, 'accesstoken')
+CORS_EXPOSE_HEADERS = ['Content-Disposition']
 # ... 文件末尾 ...
 
 # Celery Configuration Options
@@ -199,7 +242,7 @@ import os as _os
 # 注意：base_url 取 OpenAI 兼容的「基址」(以 /v1 结尾)，SDK 会自动拼接
 # /chat/completions；不要把完整的 .../chat/completions 路径填进来。
 # 自部署模型通常不校验密钥，默认占位 'EMPTY' 即可，仍可由环境变量覆盖。
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'EMPTY')
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'http://127.0.0.1:9234/v1',
 )
@@ -272,3 +315,6 @@ RULE_COMPILE_LLM_MAX_TOKENS = int(
 RULE_COMPILE_LLM_TIMEOUT = int(
     _os.environ.get('RULE_COMPILE_LLM_TIMEOUT', '120'),
 )
+
+CLUE_PUSH_BASE_URL = os.environ.get('CLUE_PUSH_BASE_URL', '')
+CLUE_PUSH_API_KEY = os.environ.get('CLUE_PUSH_API_KEY', '')

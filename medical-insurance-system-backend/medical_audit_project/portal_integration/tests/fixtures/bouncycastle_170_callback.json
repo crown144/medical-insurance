@@ -1,0 +1,5 @@
+{
+  "ciphertext": "BBB/pmr+AdPEy+qAUCprtHvk02aq0qf9mteHTtAETrWrpr/wOJXCXTk60MEclN2LmJ86pPHOdmYvA0Dg58ucXpO6cDQ3f2ea43X/d7Nfiwp8L9aUGqGCSYHpwxVsuyUYntQZW2F4/V42pIhmB+sGiKAPNF6CiVfL35I6W/WS0ghXS8cCc/DizYDsScLgKLgVgMGzzb5LR5MvhPC6/L4v13z1cQA83T78DHzMd9skoPI1LvJvc+t3FhHfWlRr4joYtP0pEDFiKvlqzGrRRNz3OTKZOeFsm3Mio+QeoXIpt7TqiynewN+s/9zTxxLwMZ/cRo5/Ev7ncf3eEsByKbyIsYLVNZP9XD7Hcf2huVPmTsdnfnA5UZM55tRUi1EejHyBBP52ydjPCgguGDjWVKHqncOa0geDyN/DNF7yTluJuBwwxAnHOpSAZEyhlDAlPQ7qHxxtnUVLYNJqChE=",
+  "signature": "MEQCIGchoJ7EB1ADauH99ZXHwvkJmFVUIiRD/EvBpuvdeECHAiBI8rztFB4NO9Si1lfVMirJgVFq6GV+bv9JjSLdNb6mJg==",
+  "source": "Bouncy Castle 1.70 SM2 / SM3withSm2；使用 v1.9 文档公开示例密钥生成，测试专用"
+}
