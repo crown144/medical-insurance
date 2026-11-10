@@ -132,45 +132,48 @@ def filter_list(data_list: List[Dict], field_path: str, match_value: Any, operat
 
     return result
 
-def calc_stats(data_list: List[Any], method: str) -> Any:
-    """
-    对纯值列表进行计算。
-    支持：sum, count, avg, max, min, max_gap, min_gap, span_days
-    """
+def calc_numeric_stats(data_list: List[Any], method: str) -> Any:
+    """Calculate count, aggregation, and descriptive statistics."""
     if not data_list:
         return 0 if method in ["count", "sum"] else None
 
-    # 基础数学统计
     if method == "count": return len(data_list)
     if method == "sum": return sum([float(x) for x in data_list if x is not None])
     if method == "avg": return sum([float(x) for x in data_list]) / len(data_list)
     if method == "max": return max(data_list)
     if method == "min": return min(data_list)
     if method == "distinct_count": return len(set(data_list))
-
-    # 日期特殊计算
-    if method in ["max_gap", "min_gap", "span_days"]:
-        try:
-            # 1. 转换并排序
-            dates = sorted([date_parser.parse(str(d)) for d in data_list if d])
-            if len(dates) < 2:
-                return 0
-            
-            # 2. span_days: 计算最早到最晚日期的总跨度
-            if method == "span_days":
-                return (dates[-1] - dates[0]).days
-            
-            # 3. 计算相邻差值
-            diffs = [(dates[i+1] - dates[i]).days for i in range(len(dates)-1)]
-            
-            if method == "max_gap": return max(diffs)
-            if method == "min_gap": return min(diffs)
-            
-        except Exception as e:
-            print(f"Date Calc Error: {e}")
-            return 0
-
     return None
+
+
+def calc_date_interval_stats(date_list: List[Any], method: str) -> Any:
+    """Calculate date span or adjacent-date gaps in days."""
+    if not date_list:
+        return None
+    if method not in ["max_gap", "min_gap", "span_days"]:
+        return None
+    try:
+        dates = sorted([date_parser.parse(str(value)) for value in date_list if value])
+        if len(dates) < 2:
+            return 0
+        if method == "span_days":
+            return (dates[-1] - dates[0]).days
+        gaps = [(dates[index + 1] - dates[index]).days for index in range(len(dates) - 1)]
+        if method == "max_gap":
+            return max(gaps)
+        if method == "min_gap":
+            return min(gaps)
+    except Exception as exc:
+        logger.warning("Date interval calculation failed: %s", exc)
+        return 0
+    return None
+
+
+def calc_stats(data_list: List[Any], method: str) -> Any:
+    """Backward-compatible dispatcher for previously generated rule programs."""
+    if method in ["max_gap", "min_gap", "span_days"]:
+        return calc_date_interval_stats(data_list, method)
+    return calc_numeric_stats(data_list, method)
 
 # ==========================================
 # L2 函数
@@ -598,7 +601,9 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
     exec_globals = {
         'get_val': get_val,
         'filter_list': filter_list,
-        'calc_stats': calc_stats, # 新增 calc_stats
+        'calc_numeric_stats': calc_numeric_stats,
+        'calc_date_interval_stats': calc_date_interval_stats,
+        'calc_stats': calc_stats,  # Backward compatibility for stored rule code.
         'list_contains': list_contains,
         'is_compare': is_compare, # Added for Price Check logic
         'llm_bool': llm_bool,

@@ -26,14 +26,24 @@ export interface RuleGenerateResult {
   execution_bindings: Array<{
     atomic_constraint_id: string;
     audit_function: string;
+    binding_source: 'deterministic' | 'deterministic_fallback' | 'llm';
+    capability_id?: null | string;
     data_source: string;
     expected_condition: string;
     field: string;
     function_parameters: Record<string, any>;
     role: string;
     status: 'bound' | 'unbound';
+    validation_status: 'invalid' | 'valid';
   }>;
+  binding_source: 'deterministic' | 'deterministic_fallback' | 'llm';
+  binding_validation: {
+    errors: string[];
+    fallback_reason?: string;
+    valid: boolean;
+  };
   generated_code: string;
+  generated_python?: string;
   irr: {
     constraint_condition: string;
     constraint_object: string;

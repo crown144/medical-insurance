@@ -51,6 +51,40 @@ class FeiJianAlignmentTests(SimpleTestCase):
         self.assertEqual(item['matchScore'], 0.9)
         self.assertEqual(item['feijianCategory'], canonical)
         self.assertEqual(item['systemCategory'], canonical)
+        self.assertEqual(item['systemViolationItem'], '')
         self.assertIn('matchDebug', item)
         self.assertEqual(item['matchDebug']['feijianNormalizedCategory'], canonical)
         self.assertEqual(item['matchDebug']['systemNormalizedCategory'], canonical)
+
+    def test_alignment_item_exposes_system_violation_item(self):
+        record = SimpleNamespace(
+            id=1,
+            audit_task_id='7',
+            hospitalization_no='ZY001',
+            patient_name='张三',
+            hospital_name='测试医院',
+            issue_category='超限定用药',
+            issue_description='醋酸钙须有高磷血症诊断',
+            involved_amount=Decimal('0'),
+        )
+        result = SimpleNamespace(
+            id=2,
+            task_id=7,
+            rule=SimpleNamespace(
+                type='超限定用药',
+                drug_name='醋酸钙',
+                description='使用醋酸钙须有高磷血症诊断',
+            ),
+            reason='适应症不符',
+            violation_item='{"drug_name": "醋酸钙片"}',
+        )
+
+        item = alignment._build_alignment(
+            record,
+            result,
+            alignment.MATCHED,
+            0.9,
+            ['category matched'],
+        )
+
+        self.assertEqual(item['systemViolationItem'], '醋酸钙片')

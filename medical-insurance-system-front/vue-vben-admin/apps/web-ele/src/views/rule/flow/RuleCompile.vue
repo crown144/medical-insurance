@@ -309,8 +309,9 @@ onMounted(fetchData);
       <div>
         <div class="title-main">Rule Compilation</div>
         <div class="title-sub">
-          Decompose an existing rule, bind it to approved EMR capabilities, and
-          compile a deterministic Python program.
+          Decompose an existing rule, bind the decomposed constraints to the
+          corresponding EMR data sources, audit functions, and parameters, and
+          compile a Python program.
         </div>
       </div>
     </div>
@@ -462,7 +463,6 @@ onMounted(fetchData);
                 label="Normalized Constraint"
                 min-width="260"
               />
-              <el-table-column prop="source_span" label="Source Span" min-width="260" />
             </el-table>
             <el-empty v-else description="Compile the selected rule to view atomic constraints" />
           </section>
@@ -484,16 +484,13 @@ onMounted(fetchData);
             >
               <el-table-column
                 prop="atomic_constraint_id"
-                label="Atomic Constraint ID"
-                width="170"
+                label="Atomic ID"
+                width="120"
               />
-              <el-table-column label="EMR Data Source / Field" min-width="190">
-                <template #default="scope">
-                  {{ scope.row.data_source }} / {{ scope.row.field }}
-                </template>
-              </el-table-column>
+              <el-table-column prop="data_source" label="EMR Data Source" min-width="170" />
+              <el-table-column prop="field" label="EMR Field" min-width="180" />
               <el-table-column prop="audit_function" label="Audit Function" width="140" />
-              <el-table-column label="Function Parameters" min-width="220">
+              <el-table-column label="Parameters" min-width="220">
                 <template #default="scope">
                   {{ formatParameters(scope.row.function_parameters) || '-' }}
                 </template>

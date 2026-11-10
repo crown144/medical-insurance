@@ -5,7 +5,8 @@ from typing import Any
 
 
 APPROVED_CALLS = {
-    'get_val', 'filter_list', 'is_compare', 'llm_bool',
+    'get_val', 'filter_list', 'calc_numeric_stats', 'calc_date_interval_stats',
+    'calc_stats', 'list_contains', 'is_compare', 'llm_bool',
     'submit_result', 'any', 'len', 'str',
 }
 
@@ -15,12 +16,20 @@ def compile_rule(
     applicability_binding: dict[str, Any],
     constraint_bindings: list[dict[str, Any]],
 ) -> str:
-    if applicability_binding.get('status') != 'bound':
+    if (
+        applicability_binding.get('status') != 'bound'
+        or applicability_binding.get('validation_status') != 'valid'
+        or 'runtime' not in applicability_binding
+    ):
         raise ValueError('Constraint Object has no approved applicability binding.')
     unbound = [
         item['atomic_constraint_id']
         for item in constraint_bindings
-        if item['status'] != 'bound'
+        if (
+            item.get('status') != 'bound'
+            or item.get('validation_status') != 'valid'
+            or 'runtime' not in item
+        )
     ]
     if unbound:
         raise ValueError(f"Unbound atomic constraints: {', '.join(unbound)}")
@@ -66,6 +75,30 @@ def compile_rule(
                 f"        context_text={variable}_context,",
                 f"        question={runtime['question']!r},",
                 '    )',
+                '',
+            ])
+            continue
+        if mode in {
+            'numeric_statistical_comparison',
+            'temporal_interval_comparison',
+            'statistical_comparison',
+        }:
+            calculation_function = {
+                'numeric_statistical_comparison': 'calc_numeric_stats',
+                'temporal_interval_comparison': 'calc_date_interval_stats',
+                'statistical_comparison': 'calc_stats',
+            }[mode]
+            lines.extend([
+                f"    {variable}_values = get_val(ctx, {runtime['source_path']!r} + '.' + {runtime['field_path']!r}, default=[])",
+                f"    {variable}_statistic = {calculation_function}({variable}_values, {runtime['method']!r})",
+                f"    {atom_id} = is_compare({variable}_statistic, {runtime['operator']!r}, {runtime['threshold']!r})",
+                '',
+            ])
+            continue
+        if mode == 'list_membership':
+            lines.extend([
+                f"    {variable}_values = get_val(ctx, {runtime['source_path']!r} + '.' + {runtime['field_path']!r}, default=[])",
+                f"    {atom_id} = any(list_contains({variable}_values, expected) for expected in {runtime['expected_values']!r})",
                 '',
             ])
             continue

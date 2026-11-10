@@ -729,13 +729,13 @@ onUnmounted(() => {
               >
                 <el-table-column type="selection" width="44" />
                 <el-table-column prop="seq" label="No." width="64" align="center" />
-                <el-table-column label="Rule Type" width="120">
+                <el-table-column label="Rule Category" width="120">
                   <template #default="{ row }">
                     <el-tag size="small">{{ ruleTypeLabel(row.rule_type) }}</el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="Target Object"
+                  label="Constraint Object"
                   min-width="160"
                   show-overflow-tooltip
                 >
@@ -744,7 +744,7 @@ onUnmounted(() => {
                   </template>
                 </el-table-column>
                 <el-table-column
-                  label="Constraint"
+                  label="Constraint Condition"
                   min-width="260"
                   show-overflow-tooltip
                 >

@@ -11,11 +11,9 @@ import httpx
 from django.conf import settings
 from openai import OpenAI
 
-from .binding_resolver import (
-    resolve_applicability_binding,
-    resolve_constraint_bindings,
-)
+from .binding_resolver import resolve_bindings
 from .deterministic_compiler import compile_rule, validate_generated_code
+from .llm_binding_resolver import request_binding_plan
 from .semantic_decomposer import (
     SYSTEM_PROMPT,
     build_messages,
@@ -30,7 +28,8 @@ from .semantic_decomposer import (
 
 TEMP_DISABLE_LLM_ENV = 'AGENTA_DISABLE_LLM_TEST'
 APPROVED_AUDIT_FUNCTIONS = {
-    'get_val', 'filter_list', 'calc_stats', 'list_contains',
+    'get_val', 'filter_list', 'calc_numeric_stats', 'calc_date_interval_stats',
+    'calc_stats', 'list_contains',
     'is_compare', 'llm_bool', 'submit_result',
 }
 SAFE_BUILTINS = {
@@ -54,6 +53,8 @@ class AgentAGenerationResult:
     applicability_binding: dict[str, Any]
     constraint_bindings: list[dict[str, Any]]
     execution_bindings: list[dict[str, Any]]
+    binding_source: str
+    binding_validation: dict[str, Any]
     raw_output: str | None = None
     finish_reason: str | None = None
 
@@ -147,23 +148,49 @@ class AgentAService:
             fixed_irr['constraint_condition'],
         )
         logic_tree = decomposition['logic_tree']
-        applicability_binding = resolve_applicability_binding(fixed_irr)
-        constraint_bindings = resolve_constraint_bindings(atoms)
-        unbound = [
-            item['atomic_constraint_id']
-            for item in constraint_bindings
-            if item['status'] == 'unbound'
-        ]
-        if applicability_binding['status'] != 'bound' or unbound:
-            errors = []
-            if applicability_binding['status'] != 'bound':
-                errors.append('Constraint Object has no approved applicability binding.')
-            if unbound:
-                errors.append(f"Unbound atomic constraints: {', '.join(unbound)}")
+        binding_mode = str(
+            getattr(settings, 'RULE_BINDING_MODE', 'hybrid')
+        ).strip().lower()
+        fallback_enabled = bool(
+            getattr(settings, 'RULE_BINDING_FALLBACK_ENABLED', True)
+        )
+        if cls.is_temp_llm_disabled():
+            binding_mode = 'deterministic'
+
+        llm_request = None
+        if binding_mode != 'deterministic':
+            llm_request = lambda: request_binding_plan(
+                client,
+                model,
+                fixed_irr,
+                atoms,
+                logic_tree,
+                max_tokens=int(
+                    getattr(
+                        settings,
+                        'RULE_BINDING_LLM_MAX_TOKENS',
+                        cls._llm_config()['max_tokens'],
+                    )
+                ),
+            )
+        binding_result = resolve_bindings(
+            fixed_irr,
+            atoms,
+            logic_tree,
+            mode=binding_mode,
+            fallback_enabled=fallback_enabled,
+            llm_request=llm_request,
+        )
+        applicability_binding = binding_result['applicability_binding']
+        constraint_bindings = binding_result['constraint_bindings']
+        binding_source = binding_result['binding_source']
+        binding_validation = binding_result['binding_validation']
+
+        if not binding_validation['valid']:
             generated_code = ''
             validation = {
                 'valid': False,
-                'errors': errors,
+                'errors': binding_validation['errors'],
             }
         else:
             generated_code = compile_rule(
@@ -178,8 +205,10 @@ class AgentAService:
             'matched_description': fixed_irr['constraint_condition'],
             'generated_code_length': len(generated_code),
             'runtime_mode': runtime_mode,
-            'runtime_label': 'Deterministic compilation',
+            'runtime_label': 'Catalog-constrained binding and deterministic compilation',
             'llm_config': model_config,
+            'binding_source': binding_source,
+            'binding_mode': binding_mode,
         }
         tools = sorted({
             binding['audit_function']
@@ -220,6 +249,8 @@ class AgentAService:
             applicability_binding=public_applicability,
             constraint_bindings=public_constraints,
             execution_bindings=compatibility_bindings,
+            binding_source=binding_source,
+            binding_validation=binding_validation,
             raw_output=raw_output,
             finish_reason=finish_reason,
         )

@@ -55,6 +55,7 @@ def _serialize_generation_result(generated):
         'system_prompt': generated.system_prompt,
         'tool_schema': generated.tool_schema,
         'generated_code': generated.generated_code,
+        'generated_python': generated.generated_code,
         'validation': generated.validation,
         'rule_snapshot': generated.rule_snapshot,
         'raw_output': generated.raw_output,
@@ -69,6 +70,8 @@ def _serialize_generation_result(generated):
         'applicability_binding': generated.applicability_binding,
         'constraint_bindings': generated.constraint_bindings,
         'execution_bindings': generated.execution_bindings,
+        'binding_source': generated.binding_source,
+        'binding_validation': generated.binding_validation,
     }
 
 
@@ -191,6 +194,7 @@ class RuleViewSet(viewsets.ModelViewSet):
                 'system_prompt': generated.system_prompt,
                 'tool_schema': generated.tool_schema,
                 'generated_code': generated.generated_code,
+                'generated_python': generated.generated_code,
                 'validation': generated.validation,
                 'rule_snapshot': generated.rule_snapshot,
                 'raw_output': generated.raw_output,
@@ -205,6 +209,8 @@ class RuleViewSet(viewsets.ModelViewSet):
                 'applicability_binding': generated.applicability_binding,
                 'constraint_bindings': generated.constraint_bindings,
                 'execution_bindings': generated.execution_bindings,
+                'binding_source': generated.binding_source,
+                'binding_validation': generated.binding_validation,
             },
         })
 

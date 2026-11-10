@@ -16,6 +16,7 @@ import { DataAnalysis, Download, Refresh, Search, Upload } from '@element-plus/i
 import { ElMessage } from 'element-plus';
 import {
   getRuleDescriptionEnglish,
+  getRuleNameEnglish,
   getRuleTypeLabel,
   getViolationReasonEnglish,
 } from '../../../config/rule-type';
@@ -145,6 +146,12 @@ function systemIssueText(row?: AlignmentResult | null) {
   );
 }
 
+function systemViolationItemText(row?: AlignmentResult | null) {
+  const item = row?.systemViolationItem?.trim() || '';
+  if (!item) return '';
+  return getRuleNameEnglish(item) || item;
+}
+
 function getBatchStatusLabel(status: string, fallback?: string) {
   const map: Record<string, string> = {
     uploading: 'Uploading',
@@ -192,10 +199,35 @@ function getMatchStatusLabel(status: string, fallback?: string) {
   return map[status] || fallback || status || '-';
 }
 
+const matchReasonEnglishMap: Record<string, string> = {
+  '住院号一致': 'Hospitalization ID matches',
+  '问题类型归一后一致': 'Normalized issue categories match',
+  '双方问题类型可识别但不完全一致':
+    'Both issue categories were recognized but do not fully match',
+  '问题描述文本相似': 'Issue descriptions are similar',
+  '关键药品/项目中英文一致':
+    'Key medication/item matches',
+  '金额接近': 'The involved amounts are similar',
+  '同住院号下未找到对应飞检问题':
+    'No corresponding inspection issue was found for this hospitalization ID',
+};
+
+function getMatchReasonEnglish(reason: string) {
+  const text = reason.trim();
+  if (!text) return '';
+  if (matchReasonEnglishMap[text]) return matchReasonEnglishMap[text];
+  if (text.startsWith('大模型复核：') || text.startsWith('大模型复核:')) {
+    return 'LLM review confirms semantic alignment';
+  }
+  return text;
+}
+
 function getVisibleMatchReasons(reasons?: string[]) {
-  return (reasons || []).filter(
-    (reason) => !/(amount|金额|费用|元|proximity)/i.test(reason),
-  );
+  const translated = (reasons || [])
+    .filter((reason) => !/(amount|金额|费用|元|proximity)/i.test(reason))
+    .map(getMatchReasonEnglish)
+    .filter(Boolean);
+  return Array.from(new Set(translated));
 }
 
 // 目标字段标签映射
@@ -1019,6 +1051,9 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="System Issue" min-width="360">
                   <template #default="{ row }">
+                    <div v-if="systemViolationItemText(row)" class="system-violation-item">
+                      <span>Violation Item:</span> {{ systemViolationItemText(row) }}
+                    </div>
                     <div class="issue-main issue-text system-issue-text">{{ systemIssueText(row) }}</div>
                     <div class="muted">{{ getRuleTypeLabel(row.systemCategory) }}</div>
                   </template>
@@ -1045,7 +1080,19 @@ onMounted(() => {
                 </el-table-column>
                 <el-table-column label="Evidence" min-width="180" show-overflow-tooltip>
                   <template #default="{ row }">
-                    {{ getVisibleMatchReasons(row.matchReasons).join('、') || '-' }}
+                    <div
+                      v-if="getVisibleMatchReasons(row.matchReasons).length"
+                      class="evidence-list"
+                    >
+                      <div
+                        v-for="reason in getVisibleMatchReasons(row.matchReasons)"
+                        :key="reason"
+                        class="evidence-line"
+                      >
+                        {{ reason }}
+                      </div>
+                    </div>
+                    <span v-else>-</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="Actions" width="140" fixed="right" align="center">
@@ -1118,6 +1165,13 @@ onMounted(() => {
               </div>
               <div class="detail-block">
                 <div class="detail-label">System Issue</div>
+                <div
+                  v-if="systemViolationItemText(selectedAlignmentDetail)"
+                  class="system-violation-item"
+                >
+                  <span>Violation Item:</span>
+                  {{ systemViolationItemText(selectedAlignmentDetail) }}
+                </div>
                 <div class="detail-text">{{ systemIssueText(selectedAlignmentDetail) }}</div>
                 <div class="detail-meta">
                   Category: {{ getRuleTypeLabel(selectedAlignmentDetail.systemCategory) }}
@@ -1150,9 +1204,8 @@ onMounted(() => {
                 v-if="getVisibleMatchReasons(selectedAlignmentDetail.matchReasons).length === 0"
                 class="muted"
               >
-                -
+                No evidence available.
               </span>
-              <span v-if="!selectedAlignmentDetail.matchReasons?.length" class="muted">No evidence available.</span>
             </div>
           </div>
 
@@ -1527,6 +1580,30 @@ onMounted(() => {
 .system-issue-text {
   max-height: 72px;
   overflow: auto;
+}
+
+.system-violation-item {
+  margin-bottom: 6px;
+  color: #1f3a5f;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.system-violation-item span {
+  color: #718096;
+  font-weight: 500;
+}
+
+.evidence-list {
+  white-space: normal;
+}
+
+.evidence-line {
+  line-height: 1.45;
+}
+
+.evidence-line + .evidence-line {
+  margin-top: 4px;
 }
 
 .alignment-detail {

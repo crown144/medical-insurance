@@ -481,6 +481,7 @@ def _build_alignment(
         'feijianIssue': record.issue_description or record.issue_category,
         'feijianAmount': float(record.involved_amount or 0),
         'feijianCategory': feijian_category or record.issue_category,
+        'systemViolationItem': _system_violation_item(result),
         'systemIssue': _system_issue(result),
         'systemAmount': float(_extract_amount(system_text) or 0),
         'systemCategory': system_category,
@@ -513,6 +514,7 @@ def _build_system_only_alignment(result: Result) -> Dict[str, Any]:
         'feijianIssue': '',
         'feijianAmount': 0,
         'feijianCategory': '',
+        'systemViolationItem': _system_violation_item(result),
         'systemIssue': _system_issue(result),
         'systemAmount': float(_extract_amount(system_text) or 0),
         'systemCategory': system_category,
@@ -644,6 +646,44 @@ def _system_issue(result: Optional[Result]) -> str:
         return ''
     raw = result.reason or result.violation_item or ''
     return _translate_reason(raw)
+
+
+def _system_violation_item(result: Optional[Result]) -> str:
+    """Return the rule/item name separately from the violation reason."""
+    if not result:
+        return ''
+
+    snapshot = result.violation_item
+    if isinstance(snapshot, str):
+        try:
+            snapshot = json.loads(snapshot)
+        except (TypeError, ValueError):
+            snapshot = None
+
+    if isinstance(snapshot, dict):
+        name_fields = (
+            'drug_name', '药品通用名', '药品名',
+            '收费项目名称', '项目名称', 'item_name', 'name',
+        )
+        for field in name_fields:
+            value = _stringify(snapshot.get(field, '')).strip()
+            if value:
+                return value
+
+        for detail_field in ('用药明细', '收费明细'):
+            details = snapshot.get(detail_field)
+            if not isinstance(details, list):
+                continue
+            for detail in details:
+                if not isinstance(detail, dict):
+                    continue
+                for field in name_fields:
+                    value = _stringify(detail.get(field, '')).strip()
+                    if value:
+                        return value
+
+    rule = getattr(result, 'rule', None)
+    return _stringify(getattr(rule, 'drug_name', '')).strip()
 
 
 def _system_text(result: Optional[Result]) -> str:

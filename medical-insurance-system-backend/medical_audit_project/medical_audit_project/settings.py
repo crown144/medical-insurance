@@ -213,7 +213,7 @@ import os as _os
 # RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
 #     'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
 # )
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'sk-ws-H.PPIXPIH.2d4j.MEYCIQD7dI-uuyyuKSYmfgPpfM8NGdRdw07UU3tOpCsJZKCcegIhAM9wcTzhSZWdwK4CBtQk-1G-kIoSO_FkSxofsNRhE2HG')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'https://ws-a96ee3qy6pgzobqq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
 )
@@ -256,7 +256,7 @@ RULE_IMPORT_TASK_TIME_LIMIT = int(
 # ============================================================
 RULE_COMPILE_LLM_API_KEY = _os.environ.get(
     'RULE_COMPILE_LLM_API_KEY',
-    _os.environ.get('AGENTA_API_KEY', _os.environ.get('DASHSCOPE_API_KEY', '')),
+    _os.environ.get('AGENTA_API_KEY', _os.environ.get('DASHSCOPE_API_KEY', 'sk-ws-H.PPIXPIH.2d4j.MEYCIQD7dI-uuyyuKSYmfgPpfM8NGdRdw07UU3tOpCsJZKCcegIhAM9wcTzhSZWdwK4CBtQk-1G-kIoSO_FkSxofsNRhE2HG')),
 )
 RULE_COMPILE_LLM_BASE_URL = _os.environ.get(
     'RULE_COMPILE_LLM_BASE_URL',
@@ -283,4 +283,15 @@ RULE_COMPILE_LLM_MAX_TOKENS = int(
 )
 RULE_COMPILE_LLM_TIMEOUT = int(
     _os.environ.get('RULE_COMPILE_LLM_TIMEOUT', '120'),
+)
+RULE_BINDING_MODE = _os.environ.get(
+    'RULE_BINDING_MODE',
+    'hybrid' if DEMO_MODE else 'llm',
+).strip().lower()
+RULE_BINDING_FALLBACK_ENABLED = _env_flag(
+    'RULE_BINDING_FALLBACK_ENABLED',
+    True,
+)
+RULE_BINDING_LLM_MAX_TOKENS = int(
+    _os.environ.get('RULE_BINDING_LLM_MAX_TOKENS', '4000'),
 )

@@ -112,7 +112,9 @@ const RULE_NAME_TERM_MAP: Record<string, string> = {
 
 const RULE_DESCRIPTION_LABEL_MAP: Record<string, string> = {
   '使用艾普拉唑须有十二指肠溃疡、反流性食管炎诊断':
-    'Use of ilaprazole requires a diagnosis of duodenal ulcer or reflux esophagitis',
+    'Limited to patients diagnosed with duodenal ulcer or reflux esophagitis.',
+  '限有十二指肠溃疡、反流性食管炎诊断的患者':
+    'Limited to patients diagnosed with duodenal ulcer or reflux esophagitis.',
   '使用醋酸钙须有高磷血症诊断':
     'Use of calcium acetate tablets requires a diagnosis of hyperphosphatemia',
   '限慢性乙型肝炎成人患者或2岁至<18岁慢性HBV感染代偿性肝病的核苷初治儿童患者。':

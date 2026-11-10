@@ -223,7 +223,7 @@ onMounted(() => {
                 />
               </el-form-item>
             </el-col>
-            <el-col :span="6">
+            <el-col :span="12" class="query-actions">
               <el-button
                 type="primary"
                 :icon="Search"
@@ -240,7 +240,7 @@ onMounted(() => {
                 :disabled="!taskId"
                 @click="requestModelRecalculation"
               >
-                Recalculate with Model
+                Recalculate
               </el-button>
             </el-col>
           </el-row>
@@ -358,6 +358,11 @@ onMounted(() => {
 }
 .query-card {
   padding-bottom: 10px;
+}
+.query-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 .table-card {
   border-top: 1px solid #eef2f7;

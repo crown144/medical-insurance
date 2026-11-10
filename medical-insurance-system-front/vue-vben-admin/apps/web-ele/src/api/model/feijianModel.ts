@@ -135,6 +135,7 @@ export interface AlignmentResult {
   feijianIssue: string;
   feijianAmount: number;
   feijianCategory: string;
+  systemViolationItem?: string;
   systemIssue: string;
   systemAmount: number;
   systemCategory: string;

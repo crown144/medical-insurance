@@ -2,12 +2,24 @@ import os
 from types import SimpleNamespace
 from unittest import mock
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
+
+from engine.over_standard_v2 import (
+    calc_date_interval_stats,
+    calc_numeric_stats,
+    calc_stats,
+)
 
 from .models import Rule
 from .serializers import RuleSerializer
 from .services import AgentAService
+from .services.binding_resolver import (
+    resolve_bindings,
+    resolve_constraint_bindings,
+    validate_and_materialize_binding_plan,
+)
+from .services.deterministic_compiler import compile_rule
 from .services.semantic_decomposer import (
     expand_supported_compound_atoms,
     ground_source_spans,
@@ -33,6 +45,410 @@ class RuleSerializerTests(TestCase):
 
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(serializer.validated_data, {'status': True})
+
+
+class CatalogConstrainedBindingTests(SimpleTestCase):
+    irr = {
+        'rule_category': 'Restricted Medication Use',
+        'constraint_object': 'Entecavir Oral Solution',
+        'constraint_condition': 'Policy condition',
+    }
+
+    @staticmethod
+    def applicability_plan():
+        return {
+            'status': 'bound',
+            'capability_id': 'medication_name_matching',
+            'parameters': {
+                'operator': 'contains',
+                'match_values': ['Entecavir Oral Solution'],
+            },
+            'source_reference': {
+                'type': 'constraint_object',
+                'text': 'Entecavir Oral Solution',
+            },
+        }
+
+    def resolve_atom(self, atom, binding):
+        plan = {
+            'applicability_binding': self.applicability_plan(),
+            'constraint_bindings': [{
+                'atomic_id': atom['id'],
+                'source_span': atom['source_span'],
+                **binding,
+            }],
+        }
+        return validate_and_materialize_binding_plan(
+            plan,
+            self.irr,
+            [atom],
+            atom['id'],
+        )
+
+    def test_adult_age_materializes_age_comparison(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is an adult.',
+            'source_span': 'adult patients',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'age_comparison',
+            'parameters': {'operator': '>=', 'threshold': 18},
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['capability_id'], 'age_comparison')
+        self.assertEqual(binding['audit_function'], 'is_compare')
+        self.assertEqual(binding['runtime']['comparisons'], [('>=', 18)])
+
+    def test_pediatric_range_materializes_age_range(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is aged 2 to under 18 years.',
+            'source_span': 'aged 2 to under 18 years',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'age_range',
+            'parameters': {
+                'lower_operator': '>=', 'lower': 2,
+                'upper_operator': '<', 'upper': 18,
+            },
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['runtime']['comparisons'], [('>=', 2), ('<', 18)])
+
+    def test_pediatric_range_is_supported_by_deterministic_fallback(self):
+        atom = {
+            'id': 'A3',
+            'normalized_constraint': (
+                'The patient is a child aged 2 years to under 18 years.'
+            ),
+            'source_span': '2岁至<18岁',
+        }
+
+        binding = resolve_constraint_bindings([atom])[0]
+
+        self.assertEqual(binding['status'], 'bound')
+        self.assertEqual(binding['capability_id'], 'age_range')
+        self.assertEqual(binding['data_source'], 'Insurance Information')
+        self.assertEqual(binding['field'], 'Age')
+        self.assertEqual(binding['audit_function'], 'is_compare')
+        self.assertEqual(binding['function_parameters'], {
+            'lower_operator': '>=',
+            'lower': 2,
+            'upper_operator': '<',
+            'upper': 18,
+        })
+
+    def test_numeric_statistics_materialize_and_compile_to_numeric_function(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The total charge amount exceeds 100.',
+            'source_span': 'The total charge amount exceeds 100.',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'statistical_calculation',
+            'parameters': {
+                'method': 'sum', 'operator': '>', 'threshold': 100,
+            },
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['audit_function'], 'calc_numeric_stats')
+        code = compile_rule('A1', result['applicability_binding'], [binding])
+        self.assertIn("calc_numeric_stats(a1_values, 'sum')", code)
+        self.assertNotIn('calc_stats(a1_values', code)
+
+    def test_date_intervals_materialize_and_compile_to_date_function(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': (
+                'The minimum interval between charges is less than 7 days.'
+            ),
+            'source_span': (
+                'The minimum interval between charges is less than 7 days.'
+            ),
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'temporal_interval_calculation',
+            'parameters': {
+                'method': 'min_gap', 'operator': '<', 'threshold': 7,
+            },
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['data_source'], 'Charge Records')
+        self.assertEqual(binding['field'], 'Charge Date')
+        self.assertEqual(binding['audit_function'], 'calc_date_interval_stats')
+        code = compile_rule('A1', result['applicability_binding'], [binding])
+        self.assertIn("calc_date_interval_stats(a1_values, 'min_gap')", code)
+
+    def test_split_statistical_functions_and_legacy_dispatcher(self):
+        values = [10, 20, 30]
+        dates = ['2026-01-01', '2026-01-04', '2026-01-10']
+
+        self.assertEqual(calc_numeric_stats(values, 'count'), 3)
+        self.assertEqual(calc_numeric_stats(values, 'sum'), 60)
+        self.assertEqual(calc_numeric_stats(values, 'avg'), 20)
+        self.assertEqual(calc_date_interval_stats(dates, 'span_days'), 9)
+        self.assertEqual(calc_date_interval_stats(dates, 'min_gap'), 3)
+        self.assertEqual(calc_date_interval_stats(dates, 'max_gap'), 6)
+        self.assertEqual(calc_stats(values, 'sum'), 60)
+        self.assertEqual(calc_stats(dates, 'span_days'), 9)
+
+    def test_chronic_hepatitis_materializes_diagnosis_matching(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient has chronic hepatitis B.',
+            'source_span': 'chronic hepatitis B',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'diagnosis_name_matching',
+            'parameters': {
+                'operator': 'contains',
+                'match_values': ['Chronic hepatitis B'],
+            },
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['data_source'], 'Diagnosis Records')
+        self.assertEqual(binding['field'], 'Diagnosis Name')
+        self.assertEqual(binding['audit_function'], 'filter_list')
+
+    def test_nucleoside_naive_materializes_runtime_llm_bool(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is nucleoside-treatment-naive.',
+            'source_span': 'nucleoside-naive patient',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'clinical_text_semantic_assessment',
+            'parameters': {
+                'evidence_scope': 'treatment_history',
+                'question': 'Is the patient documented as nucleoside-treatment-naive?',
+            },
+        })
+
+        binding = result['constraint_bindings'][0]
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['data_source'], 'Admission Record')
+        self.assertEqual(binding['field'], 'Treatment History')
+        self.assertEqual(binding['audit_function'], 'llm_bool')
+
+    def test_unbound_condition_fails_validation(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient has an unsupported genomic marker.',
+            'source_span': 'unsupported genomic marker',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'unbound',
+            'reason': 'No approved capability can evaluate this condition.',
+        })
+
+        self.assertFalse(result['binding_validation']['valid'])
+        self.assertEqual(result['constraint_bindings'][0]['status'], 'unbound')
+        self.assertTrue(any('A1' in error for error in result['binding_validation']['errors']))
+
+    def test_unknown_capability_id_fails_validation(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is an adult.',
+            'source_span': 'adult patients',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'invented_capability',
+            'parameters': {},
+        })
+
+        self.assertFalse(result['binding_validation']['valid'])
+        self.assertTrue(any('invented_capability' in error for error in result['binding_validation']['errors']))
+
+    def test_invalid_parameters_fail_validation(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is at least 18 years old.',
+            'source_span': 'at least 18 years old',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'age_comparison',
+            'parameters': {'operator': 'approximately', 'threshold': 'eighteen'},
+        })
+
+        self.assertFalse(result['binding_validation']['valid'])
+        self.assertTrue(any('operator' in error for error in result['binding_validation']['errors']))
+        self.assertTrue(any('threshold' in error for error in result['binding_validation']['errors']))
+
+    def test_entecavir_applicability_uses_medication_capability(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is an adult.',
+            'source_span': 'adult patients',
+        }
+        result = self.resolve_atom(atom, {
+            'status': 'bound',
+            'capability_id': 'age_comparison',
+            'parameters': {'operator': '>=', 'threshold': 18},
+        })
+
+        binding = result['applicability_binding']
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(binding['capability_id'], 'medication_name_matching')
+        self.assertEqual(binding['data_source'], 'Medication Records')
+        self.assertEqual(binding['field'], 'Generic Drug Name')
+
+    def test_hybrid_mode_reports_deterministic_fallback(self):
+        atom = {
+            'id': 'A1',
+            'normalized_constraint': 'The patient is an adult.',
+            'source_span': 'adult patients',
+        }
+        result = resolve_bindings(
+            self.irr,
+            [atom],
+            'A1',
+            mode='hybrid',
+            fallback_enabled=True,
+            llm_request=lambda: {'invalid': 'output'},
+        )
+
+        self.assertTrue(result['binding_validation']['valid'])
+        self.assertEqual(result['binding_source'], 'deterministic_fallback')
+        self.assertIn('fallback_reason', result['binding_validation'])
+
+    @mock.patch('rules.services.agenta_service.compile_rule')
+    @mock.patch('rules.services.agenta_service.resolve_bindings')
+    @mock.patch('rules.services.agenta_service.AgentAService._create_client')
+    def test_invalid_binding_stops_python_generation(
+        self,
+        mock_create_client,
+        mock_resolve_bindings,
+        mock_compile_rule,
+    ):
+        semantic_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason='stop',
+                message=SimpleNamespace(content='''{
+                    "atomic_constraints": [{
+                        "id": "A1",
+                        "normalized_constraint": "The patient has an unsupported genomic marker.",
+                        "source_span": "unsupported genomic marker"
+                    }],
+                    "logic_tree": "A1"
+                }'''),
+            )],
+        )
+        client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(create=mock.Mock(return_value=semantic_response)),
+            ),
+        )
+        mock_create_client.return_value = (client, 'test-model')
+        mock_resolve_bindings.return_value = {
+            'applicability_binding': {
+                'status': 'bound',
+                'validation_status': 'valid',
+                'audit_function': 'filter_list',
+            },
+            'constraint_bindings': [{
+                'atomic_constraint_id': 'A1',
+                'status': 'unbound',
+                'validation_status': 'invalid',
+            }],
+            'binding_source': 'llm',
+            'binding_validation': {
+                'valid': False,
+                'errors': ['A1: No approved capability can evaluate this condition.'],
+            },
+        }
+
+        result = AgentAService.build(irr={
+            'rule_category': 'Restricted Medication Use',
+            'constraint_object': 'Entecavir Oral Solution',
+            'constraint_condition': 'unsupported genomic marker',
+        })
+
+        self.assertEqual(result.generated_code, '')
+        self.assertFalse(result.validation['valid'])
+        mock_compile_rule.assert_not_called()
+
+    @mock.patch('rules.services.agenta_service.AgentAService._create_client')
+    def test_valid_llm_binding_path_is_reported(self, mock_create_client):
+        semantic_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason='stop',
+                message=SimpleNamespace(content='''{
+                    "atomic_constraints": [{
+                        "id": "A1",
+                        "normalized_constraint": "The patient is an adult.",
+                        "source_span": "adult patients"
+                    }],
+                    "logic_tree": "A1"
+                }'''),
+            )],
+        )
+        binding_response = SimpleNamespace(
+            choices=[SimpleNamespace(
+                finish_reason='stop',
+                message=SimpleNamespace(content='''{
+                    "applicability_binding": {
+                        "status": "bound",
+                        "capability_id": "medication_name_matching",
+                        "parameters": {
+                            "operator": "contains",
+                            "match_values": ["Entecavir Oral Solution"]
+                        },
+                        "source_reference": {
+                            "type": "constraint_object",
+                            "text": "Entecavir Oral Solution"
+                        }
+                    },
+                    "constraint_bindings": [{
+                        "atomic_id": "A1",
+                        "status": "bound",
+                        "capability_id": "age_comparison",
+                        "parameters": {"operator": ">=", "threshold": 18},
+                        "source_span": "adult patients"
+                    }]
+                }'''),
+            )],
+        )
+        client = SimpleNamespace(
+            chat=SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=mock.Mock(side_effect=[semantic_response, binding_response]),
+                ),
+            ),
+        )
+        mock_create_client.return_value = (client, 'test-model')
+
+        result = AgentAService.build(irr={
+            'rule_category': 'Restricted Medication Use',
+            'constraint_object': 'Entecavir Oral Solution',
+            'constraint_condition': 'adult patients',
+        })
+
+        self.assertEqual(result.binding_source, 'llm')
+        self.assertTrue(result.binding_validation['valid'])
+        self.assertEqual(
+            result.constraint_bindings[0]['capability_id'],
+            'age_comparison',
+        )
+        self.assertIn('condition_satisfied = A1', result.generated_code)
 
 
 class AgentAViewTests(TestCase):
@@ -214,7 +630,7 @@ class DeterministicCompilationTests(TestCase):
         self.assertIn('is_applicable = len(applicability_matches) > 0', first.generated_code)
         self.assertIn('condition_satisfied = (A1 or A2)', first.generated_code)
         self.assertIn(
-            'A1 not satisfied: The patient has a diagnosis of duodenal ulcer.',
+            'A1 not satisfied: The patient has a diagnosis of duodenal ulcer',
             first.generated_code,
         )
         self.assertNotIn('The rule conditions are not satisfied.', first.generated_code)
@@ -238,7 +654,7 @@ class DeterministicCompilationTests(TestCase):
         self.assertIn('is_applicable = len(applicability_matches) > 0', result.generated_code)
         self.assertNotIn('is_applicable = A1', result.generated_code)
         self.assertIn(
-            'A1 must be absent but was present: A venous blood collection is charged at the same time.',
+            'A1 must be absent but was present: A venous blood collection is charged at the same time',
             result.generated_code,
         )
 
