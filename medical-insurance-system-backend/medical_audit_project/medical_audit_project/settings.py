@@ -213,7 +213,7 @@ import os as _os
 # RULE_IMPORT_LLM_MODEL_EXTRACT = _os.environ.get(
 #     'RULE_IMPORT_LLM_MODEL_EXTRACT', 'qwen',
 # )
-RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', 'sk-ws-H.PPIXPIH.2d4j.MEYCIQD7dI-uuyyuKSYmfgPpfM8NGdRdw07UU3tOpCsJZKCcegIhAM9wcTzhSZWdwK4CBtQk-1G-kIoSO_FkSxofsNRhE2HG')
+RULE_IMPORT_LLM_API_KEY = _os.environ.get('RULE_IMPORT_LLM_API_KEY', '')
 RULE_IMPORT_LLM_BASE_URL = _os.environ.get(
     'RULE_IMPORT_LLM_BASE_URL', 'https://ws-a96ee3qy6pgzobqq.cn-beijing.maas.aliyuncs.com/compatible-mode/v1',
 )
