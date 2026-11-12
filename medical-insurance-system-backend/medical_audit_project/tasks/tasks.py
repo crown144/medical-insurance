@@ -225,7 +225,7 @@ def run_audit_task(task_id):
                     # 保存"超限定用药"的结果
                     for res in drug_audit_results:
                         # 新格式：passed=False 表示违规，或兼容旧格式 violation=True
-                        is_violation = not res.get('passed', True) or res.get('violation', False)
+                        is_violation = res.get('review_status') != 'needs_review' and (not res.get('passed', True) or res.get('violation', False))
                         if is_violation:
                             try:
                                 # 对于新引擎，规则对象可能是虚拟的，不一定存在于数据库
@@ -282,7 +282,7 @@ def run_audit_task(task_id):
                     
                     # 保存“超标准收费”的结果
                     for res in charge_audit_results:
-                        is_violation = not res.get('passed', True) or res.get('violation', False)
+                        is_violation = res.get('review_status') != 'needs_review' and (not res.get('passed', True) or res.get('violation', False))
                         if is_violation:
                             try:
                                 rule_info = res.get('rule', {})
@@ -337,7 +337,7 @@ def run_audit_task(task_id):
 
                     # 保存"重复收费"的结果
                     for res in duplicate_results:
-                        is_violation = not res.get('passed', True) or res.get('violation', False)
+                        is_violation = res.get('review_status') != 'needs_review' and (not res.get('passed', True) or res.get('violation', False))
                         if is_violation:
                             try:
                                 rule_info = res.get('rule', {})

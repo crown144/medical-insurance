@@ -5,7 +5,7 @@ import type {
   RuleImportTask,
 } from '../../../api/model/ruleImportModel';
 
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 import { Download, Refresh, UploadFilled } from '@element-plus/icons-vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -62,6 +62,7 @@ const TERM_TRANSLATIONS: Record<string, string> = {
   血气分析: 'Blood gas analysis',
   '血清碳酸氢盐(HCO3)测定': 'Serum bicarbonate (HCO3) test',
   尿液分析: 'Urinalysis',
+  糖化血红蛋白测定: 'Glycated Hemoglobin Assay',
   尿沉渣白细胞分类: 'Urinary sediment leukocyte classification',
   尿蛋白定量: 'Urine protein quantification',
   '急诊监护费': 'Emergency monitoring fee',
@@ -95,34 +96,16 @@ const CONSTRAINT_TRANSLATIONS: Record<string, string> = {
     'Emergency monitoring fee may not be charged together with emergency consultation fee on the same day',
 };
 
-const EXAMPLE_FILES = [
-  {
-    key: 'duplicate-billing',
-    name: 'Duplicate billing for medical service items-1-4.pdf',
-    label: 'Duplicate billing for medical service items',
-  },
-  {
-    key: 'drug-list',
-    name: 'National Reimbursement Drug List12.pdf',
-    label: 'National Reimbursement Drug List',
-  },
-  {
-    key: 'over-frequency',
-    name: 'Over-frequency billing for medical services per cycle.pdf',
-    label: 'Over-frequency billing for medical services per cycle',
-  },
-];
+const POLICY_EXAMPLE = {
+  key: 'policy-example',
+  name: 'Policy_Example.pdf',
+};
 
 const activeTab = ref<'history' | 'upload'>('upload');
 
 const fileInputRef = ref<HTMLInputElement | null>(null);
 const selectedFile = ref<File | null>(null);
-const form = reactive({
-  task_name: '',
-  max_pdf_pages: undefined as number | undefined,
-  max_rows_per_table: undefined as number | undefined,
-  max_tables: undefined as number | undefined,
-});
+const previewUrl = ref('');
 const submitting = ref(false);
 
 const currentTask = ref<null | RuleImportTask>(null);
@@ -137,6 +120,8 @@ const rulesPageSize = ref(10);
 const ruleTypeFilter = ref('');
 const selectedRules = ref<ExtractedRule[]>([]);
 const importing = ref(false);
+const traceDialogVisible = ref(false);
+const traceRule = ref<ExtractedRule | null>(null);
 
 const historyList = ref<RuleImportTask[]>([]);
 const historyLoading = ref(false);
@@ -171,6 +156,18 @@ function ruleTypeLabel(t: string) {
   return RULE_TYPE_LABELS[t] || t || 'Uncategorized';
 }
 
+function ruleTypeTagType(t: string): 'danger' | 'info' | 'primary' | 'success' | 'warning' {
+  const typeMap: Record<string, 'danger' | 'info' | 'primary' | 'success' | 'warning'> = {
+    CONSUMABLE_RESTRICTION: 'warning',
+    DRUG_RESTRICTION: 'primary',
+    DUPLICATE_CHARGE: 'danger',
+    FREQUENCY_LIMIT: 'warning',
+    OVER_EXAMINATION: 'success',
+    PRICE_LIMIT: 'danger',
+  };
+  return typeMap[t] || 'info';
+}
+
 function translateExtractedText(value?: string) {
   const text = (value || '').trim();
   if (!text) return '-';
@@ -187,7 +184,11 @@ function translateExtractedText(value?: string) {
 }
 
 function targetObjectText(row: ExtractedRule) {
-  return row.constrained_object_en || translateExtractedText(row.constrained_object);
+  // Keep identical policy objects visibly identical even when an extraction
+  // response includes a different per-row LLM translation.
+  return TERM_TRANSLATIONS[row.constrained_object] ||
+    row.constrained_object_en ||
+    translateExtractedText(row.constrained_object);
 }
 
 function constraintText(row: ExtractedRule) {
@@ -237,6 +238,16 @@ function triggerFileSelect() {
   fileInputRef.value?.click();
 }
 
+const isSelectedPdf = computed(() => selectedFile.value?.type === 'application/pdf' ||
+  selectedFile.value?.name.toLowerCase().endsWith('.pdf'));
+
+function clearPreview() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value);
+    previewUrl.value = '';
+  }
+}
+
 function onFileChange(e: Event) {
   const input = e.target as HTMLInputElement;
   const file = input.files?.[0];
@@ -256,31 +267,14 @@ function onFileChange(e: Event) {
     input.value = '';
     return;
   }
+  clearPreview();
   selectedFile.value = file;
-  if (!form.task_name) form.task_name = file.name;
+  if (ext === 'pdf') previewUrl.value = URL.createObjectURL(file);
 }
 
 function validateForm(): boolean {
   if (!selectedFile.value) {
     ElMessage.warning('Please select a file to convert first.');
-    return false;
-  }
-  if (form.max_pdf_pages != null && form.max_pdf_pages < 1) {
-    ElMessage.warning(
-      'Maximum PDF pages must be greater than 0, or left blank for the backend default.',
-    );
-    return false;
-  }
-  if (form.max_rows_per_table != null && form.max_rows_per_table < 1) {
-    ElMessage.warning(
-      'Maximum rows per table must be greater than 0, or left blank for the backend default.',
-    );
-    return false;
-  }
-  if (form.max_tables != null && form.max_tables < 1) {
-    ElMessage.warning(
-      'Maximum number of tables must be greater than 0, or left blank for the backend default.',
-    );
     return false;
   }
   return true;
@@ -290,12 +284,7 @@ async function handleSubmit() {
   if (!validateForm()) return;
   submitting.value = true;
   try {
-    const res = await uploadRuleImportApi(selectedFile.value!, {
-      task_name: form.task_name.trim() || undefined,
-      max_pdf_pages: form.max_pdf_pages ?? undefined,
-      max_rows_per_table: form.max_rows_per_table ?? undefined,
-      max_tables: form.max_tables ?? undefined,
-    });
+    const res = await uploadRuleImportApi(selectedFile.value!);
     currentTask.value = res.task;
     rules.value = [];
     rulesTotal.value = 0;
@@ -316,15 +305,12 @@ async function handleSubmit() {
 
 function resetUpload() {
   stopPolling();
+  clearPreview();
   selectedFile.value = null;
   currentTask.value = null;
   rules.value = [];
   rulesTotal.value = 0;
   selectedRules.value = [];
-  form.task_name = '';
-  form.max_pdf_pages = undefined;
-  form.max_rows_per_table = undefined;
-  form.max_tables = undefined;
   if (fileInputRef.value) fileInputRef.value.value = '';
 }
 
@@ -355,6 +341,40 @@ function onSelectionChange(rows: ExtractedRule[]) {
   selectedRules.value = rows;
 }
 
+function openTrace(row: ExtractedRule) {
+  traceRule.value = row;
+  traceDialogVisible.value = true;
+}
+
+function traceEntries(row: ExtractedRule): Array<[string, any]> {
+  const evidence = row.evidence || {};
+  const itemName = String(evidence['药品分类'] || '');
+  const rowNumber = String(evidence['药品分类代码'] || '');
+  const quantity = String(evidence['药品名称'] || '');
+
+  // The frequency-policy PDF uses a different table schema. Its first page
+  // is extracted with generic drug-list headers, which shifts these values.
+  // Re-label only this well-identified layout; the stored source values stay
+  // untouched and all other policy rows keep their original headers.
+  if (
+    row.rule_type === 'FREQUENCY_LIMIT' &&
+    itemName === row.constrained_object &&
+    /^\d+$/.test(rowNumber) &&
+    /^\d+$/.test(quantity) &&
+    evidence['剂型']
+  ) {
+    const correctedEntries: Array<[string, any]> = [
+      ['序号', rowNumber],
+      ['医疗服务项目名称', itemName],
+      ['限定支付数量', quantity],
+      ['检查逻辑', evidence['剂型']],
+      ['备注', evidence['备注']],
+    ];
+    return correctedEntries.filter(([, value]) => value !== undefined && value !== '');
+  }
+  return Object.entries(evidence);
+}
+
 async function handleConfirmImport(selectAll: boolean) {
   if (!currentTask.value) return;
   if (!selectAll && selectedRules.value.length === 0) {
@@ -369,8 +389,11 @@ async function handleConfirmImport(selectAll: boolean) {
       ? { select_all: true }
       : { rule_ids: selectedRules.value.map((r) => r.id) };
     const res = await confirmRuleImportApi(currentTask.value.id, payload);
+    const duplicateCount = res.duplicate_rule_ids?.length || 0;
     ElMessage.success(
-      `Import completed: ${res.imported} imported, ${res.skipped} skipped.`,
+      duplicateCount
+        ? `Import completed: ${res.imported} imported; ${duplicateCount} duplicate rule${duplicateCount === 1 ? '' : 's'} skipped.`
+        : `Import completed: ${res.imported} imported, ${res.skipped} skipped.`,
     );
     currentTask.value = res.task;
     await loadRules();
@@ -404,12 +427,10 @@ function saveBlob(blob: Blob, filename: string) {
   window.URL.revokeObjectURL(url);
 }
 
-async function handleDownloadExample(key: string) {
-  const item = EXAMPLE_FILES.find((file) => file.key === key);
-  if (!item) return;
+async function handleDownloadExample() {
   try {
-    const blob = await downloadRuleImportExampleApi(key);
-    saveBlob(blob, item.name);
+    const blob = await downloadRuleImportExampleApi(POLICY_EXAMPLE.key);
+    saveBlob(blob, POLICY_EXAMPLE.name);
   } catch (error: any) {
     const msg =
       error?.response?.data?.error ||
@@ -523,6 +544,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopPolling();
+  clearPreview();
 });
 </script>
 
@@ -539,22 +561,9 @@ onUnmounted(() => {
             into the rule library.
           </div>
         </div>
-        <el-dropdown trigger="click" @command="handleDownloadExample">
-          <el-button :icon="Download">
-            Example File Download
-          </el-button>
-          <template #dropdown>
-            <el-dropdown-menu>
-              <el-dropdown-item
-                v-for="file in EXAMPLE_FILES"
-                :key="file.key"
-                :command="file.key"
-              >
-                {{ file.label }}
-              </el-dropdown-item>
-            </el-dropdown-menu>
-          </template>
-        </el-dropdown>
+        <el-button :icon="Download" @click="handleDownloadExample">
+          Download Policy Example
+        </el-button>
       </div>
 
       <el-tabs v-model="activeTab" type="border-card" class="main-tabs">
@@ -577,56 +586,34 @@ onUnmounted(() => {
                 @change="onFileChange"
               />
             </div>
-
-            <el-form label-width="150px" class="param-form">
-              <div class="form-grid">
-                <el-form-item label="Task Name">
-                  <el-input
-                    v-model="form.task_name"
-                    placeholder="Leave blank to use the file name"
-                    maxlength="255"
-                  />
-                </el-form-item>
-                <el-form-item label="Max PDF Pages">
-                  <el-input-number
-                    v-model="form.max_pdf_pages"
-                    :min="1"
-                    placeholder="Blank = backend default"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-                <el-form-item label="Max Rows per Table">
-                  <el-input-number
-                    v-model="form.max_rows_per_table"
-                    :min="1"
-                    placeholder="Blank = backend default"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-                <el-form-item label="Max Tables to Process">
-                  <el-input-number
-                    v-model="form.max_tables"
-                    :min="1"
-                    placeholder="Blank = backend default"
-                    controls-position="right"
-                    style="width: 100%"
-                  />
-                </el-form-item>
+            <div v-if="selectedFile" class="upload-preview">
+              <div class="upload-preview__header">
+                <span>Document Preview</span>
+                <el-tag size="small" type="info">{{ isSelectedPdf ? 'PDF' : 'Spreadsheet' }}</el-tag>
               </div>
-              <div class="form-actions">
-                <el-button @click="resetUpload">Reset</el-button>
-                <el-button
-                  type="primary"
-                  :loading="submitting"
-                  :disabled="polling"
-                  @click="handleSubmit"
-                >
-                  {{ submitting ? 'Submitting...' : 'Start Conversion' }}
-                </el-button>
+              <iframe
+                v-if="isSelectedPdf && previewUrl"
+                class="upload-preview__frame"
+                :src="previewUrl"
+                :title="`Preview of ${selectedFile.name}`"
+              />
+              <div v-else class="upload-preview__summary">
+                <div class="upload-preview__filetype">{{ selectedFile.name.split('.').pop()?.toUpperCase() }}</div>
+                <div>{{ selectedFile.name }}</div>
+                <span>Spreadsheet preview is not available. The file is ready to convert.</span>
               </div>
-            </el-form>
+            </div>
+            <div class="form-actions">
+              <el-button @click="resetUpload">Reset</el-button>
+              <el-button
+                type="primary"
+                :loading="submitting"
+                :disabled="polling"
+                @click="handleSubmit"
+              >
+                {{ submitting ? 'Submitting...' : 'Start Conversion' }}
+              </el-button>
+            </div>
           </div>
 
           <div v-if="currentTask" class="task-status-panel">
@@ -718,7 +705,7 @@ onUnmounted(() => {
               </div>
             </div>
 
-            <div class="table-card">
+            <div class="table-card extracted-rules-table">
               <el-table
                 :data="rules"
                 v-loading="rulesLoading"
@@ -728,10 +715,12 @@ onUnmounted(() => {
                 @selection-change="onSelectionChange"
               >
                 <el-table-column type="selection" width="44" />
-                <el-table-column prop="seq" label="No." width="64" align="center" />
+                <el-table-column prop="seq" label="No." width="68" align="center" />
                 <el-table-column label="Rule Category" width="120">
                   <template #default="{ row }">
-                    <el-tag size="small">{{ ruleTypeLabel(row.rule_type) }}</el-tag>
+                    <el-tag size="small" effect="light" :type="ruleTypeTagType(row.rule_type)" :class="{ 'rule-tag--duplicate': row.rule_type === 'DUPLICATE_CHARGE' }">
+                      {{ ruleTypeLabel(row.rule_type) }}
+                    </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column
@@ -740,7 +729,7 @@ onUnmounted(() => {
                   show-overflow-tooltip
                 >
                   <template #default="{ row }">
-                    {{ targetObjectText(row) }}
+                    <span class="object-name">{{ targetObjectText(row) }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column
@@ -749,13 +738,12 @@ onUnmounted(() => {
                   show-overflow-tooltip
                 >
                   <template #default="{ row }">
-                    {{ constraintText(row) }}
+                    <span class="condition-text">{{ constraintText(row) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column label="Source" width="160" show-overflow-tooltip>
+                <el-table-column label="Trace" width="88" align="center">
                   <template #default="{ row }">
-                    {{ row.source?.file_name || '-' }}
-                    <span v-if="row.source?.page">(Page {{ row.source.page }})</span>
+                    <el-button link type="primary" @click="openTrace(row)">View</el-button>
                   </template>
                 </el-table-column>
                 <el-table-column label="Imported" width="80" align="center">
@@ -909,22 +897,51 @@ onUnmounted(() => {
           </div>
         </el-tab-pane>
       </el-tabs>
+      <el-dialog v-model="traceDialogVisible" title="Policy Record" width="720px">
+        <template v-if="traceRule">
+          <div class="trace-location">
+            {{ traceRule.source?.file_name || 'Original policy file' }}
+            <span v-if="traceRule.source?.page"> · Page {{ traceRule.source.page }}</span>
+          </div>
+          <div class="trace-caption">Original policy record</div>
+          <el-descriptions :column="1" border class="trace-record">
+            <el-descriptions-item
+              v-for="([key, value], index) in traceEntries(traceRule)"
+              :key="`${key}-${index}`"
+              :label="key"
+            >
+              {{ value || '-' }}
+            </el-descriptions-item>
+          </el-descriptions>
+          <el-empty
+            v-if="traceEntries(traceRule).length === 0"
+            description="No original row data is available for this rule."
+          />
+        </template>
+      </el-dialog>
     </div>
   </div>
 </template>
 
 <style scoped>
+.rule-tag--duplicate {
+  --el-tag-bg-color: #f3efff;
+  --el-tag-border-color: #d9cbfa;
+  --el-tag-text-color: #7551b8;
+}
+
 .page-wrap {
   box-sizing: border-box;
   min-height: calc(100vh - 36px);
   padding: 18px;
-  background: #f5f7fb;
+  background: linear-gradient(135deg, #f4f7fc 0%, #f8fbff 52%, #f3f7fd 100%);
 }
 .content-card {
-  padding: 18px 18px 16px;
+  padding: 20px 20px 18px;
   background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 10px rgb(16 24 40 / 6%);
+  border: 1px solid #e7edf7;
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgb(35 70 120 / 8%);
 }
 .page-title {
   display: flex;
@@ -938,7 +955,7 @@ onUnmounted(() => {
   width: 4px;
   height: 18px;
   margin-top: 3px;
-  background: #409eff;
+  background: linear-gradient(180deg, #4f8df7, #285bbf);
   border-radius: 3px;
 }
 .title-copy {
@@ -959,31 +976,97 @@ onUnmounted(() => {
 .main-tabs {
   box-shadow: none;
 }
+.main-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  background: #f8faff;
+}
+.main-tabs :deep(.el-tabs__item) {
+  font-weight: 600;
+}
 .main-tabs :deep(.el-tabs__content) {
-  padding: 18px 16px 0;
+  padding: 20px 18px 2px;
 }
 
 .upload-panel {
   display: flex;
-  gap: 20px;
-  align-items: flex-start;
+  gap: 24px;
+  align-items: stretch;
+  flex-wrap: wrap;
+  padding: 22px;
+  background: linear-gradient(115deg, #f8fbff, #fff);
+  border: 1px solid #e6edf8;
+  border-radius: 12px;
 }
 .upload-box {
   display: flex;
-  flex: 0 0 280px;
+  flex: 0 0 310px;
   flex-direction: column;
   gap: 8px;
   align-items: center;
   justify-content: center;
-  height: 160px;
+  height: 260px;
   cursor: pointer;
-  background: #fafcff;
-  border: 1px dashed #c0ccda;
-  border-radius: 8px;
-  transition: border-color 0.2s;
+  background: #fff;
+  border: 1.5px dashed #9bbcf2;
+  border-radius: 12px;
+  transition: all 0.2s ease;
 }
 .upload-box:hover {
   border-color: #409eff;
+  box-shadow: 0 8px 20px rgb(64 158 255 / 12%);
+  transform: translateY(-1px);
+}
+.upload-preview {
+  display: flex;
+  flex: 1 1 420px;
+  flex-direction: column;
+  min-width: 0;
+  height: 260px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #dbe6f5;
+  border-radius: 12px;
+  box-shadow: 0 4px 14px rgb(45 75 120 / 7%);
+}
+.upload-preview__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 34px;
+  padding: 0 10px 0 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #405976;
+  background: #f7faff;
+  border-bottom: 1px solid #e7eef8;
+}
+.upload-preview__frame {
+  width: 100%;
+  flex: 1;
+  border: 0;
+  background: #f2f5f9;
+}
+.upload-preview__summary {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 7px;
+  justify-content: center;
+  padding: 14px;
+  overflow: hidden;
+  font-size: 12px;
+  color: #5e718b;
+  word-break: break-word;
+}
+.upload-preview__summary span {
+  line-height: 1.45;
+  color: #8a9ab0;
+}
+.upload-preview__filetype {
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #5782c7;
 }
 .upload-icon {
   font-size: 40px;
@@ -1002,28 +1085,20 @@ onUnmounted(() => {
   color: #8a94a6;
   text-align: center;
 }
-.param-form {
-  flex: 1;
-  min-width: 0;
-}
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0 24px;
-}
 .form-actions {
+  flex-basis: 100%;
   display: flex;
   gap: 12px;
   justify-content: flex-end;
-  margin-top: 8px;
+  margin-top: -4px;
 }
 
 .task-status-panel {
   padding: 14px 16px;
   margin-top: 18px;
-  background: #f7f9fc;
-  border: 1px solid #eef2f7;
-  border-radius: 8px;
+  background: #f7faff;
+  border: 1px solid #dfeafa;
+  border-radius: 10px;
 }
 .status-row {
   display: flex;
@@ -1050,7 +1125,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 10px;
+  margin: 22px 2px 12px;
 }
 .result-actions {
   display: flex;
@@ -1058,16 +1133,67 @@ onUnmounted(() => {
   align-items: center;
 }
 .list-title {
-  margin-bottom: 10px;
-  font-size: 14px;
-  font-weight: 600;
-  color: #1f2d3d;
+  margin-bottom: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: #203759;
 }
 .table-card {
-  padding: 6px;
+  padding: 8px;
   background: #fff;
   border: 1px solid #eef2f7;
-  border-radius: 8px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+.extracted-rules-table :deep(.el-table__header th.el-table__cell) {
+  height: 48px;
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.02em;
+  color: #294664;
+  background: #eaf1fb;
+}
+.extracted-rules-table :deep(.el-table__row td.el-table__cell) {
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.extracted-rules-table :deep(.el-table__row:hover > td.el-table__cell) {
+  background: #f5f9ff;
+}
+.object-name {
+  display: inline-block;
+  max-width: 100%;
+  overflow: hidden;
+  font-weight: 650;
+  color: #263d59;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.condition-text {
+  line-height: 1.55;
+  color: #465b76;
+}
+.trace-location {
+  margin-bottom: 14px;
+  font-size: 13px;
+  color: #697b96;
+}
+.trace-caption {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #294664;
+}
+.trace-record :deep(.el-descriptions__label) {
+  width: 160px;
+  font-weight: 650;
+  color: #405976;
+  background: #f6f9fe;
+}
+.trace-record :deep(.el-descriptions__content) {
+  line-height: 1.6;
+  color: #354b65;
+  white-space: pre-wrap;
 }
 .pager {
   display: flex;
@@ -1094,5 +1220,28 @@ onUnmounted(() => {
 }
 .mt-3 {
   margin-top: 16px;
+}
+
+@media (max-width: 880px) {
+  .upload-panel {
+    flex-direction: column;
+  }
+  .upload-box {
+    flex-basis: auto;
+    width: 100%;
+  }
+  .upload-preview {
+    flex-basis: auto;
+    width: 100%;
+    height: 240px;
+  }
+  .result-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .result-actions {
+    flex-wrap: wrap;
+  }
 }
 </style>

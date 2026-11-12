@@ -156,6 +156,20 @@ class ConfirmImportTests(TestCase):
         self.assertEqual(result['imported'], 0)
         self.assertEqual(Rule.objects.count(), 2)
 
+    def test_import_skips_equivalent_rule_from_another_task(self):
+        import_to_rule_library(self.task, select_all=True)
+        repeated_task = RuleImportTask.objects.create(
+            task_name='same-policy-again', status=RuleImportTask.Status.SUCCESS,
+        )
+        save_extracted_rules(repeated_task, SAMPLE_RULES)
+
+        result = import_to_rule_library(repeated_task, select_all=True)
+
+        self.assertEqual(result['imported'], 0)
+        self.assertEqual(result['skipped'], 2)
+        self.assertEqual(len(result['duplicate_rule_ids']), 2)
+        self.assertEqual(Rule.objects.count(), 2)
+
 
 @override_settings(MEDIA_ROOT=_MEDIA)
 class TaskApiTests(TestCase):

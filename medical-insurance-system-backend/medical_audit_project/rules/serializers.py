@@ -12,14 +12,18 @@ class RuleSerializer(serializers.ModelSerializer):
     )
     drugName = serializers.CharField(source='drug_name', allow_blank=True)
     ruleId = serializers.CharField(source='rule_id', required=False)
+    drugNameEnglish = serializers.SerializerMethodField()
+    descriptionEnglish = serializers.SerializerMethodField()
 
     class Meta:
         model = Rule
         fields = [
             'id',
             'drugName',
+            'drugNameEnglish',
             'ruleId',
             'description',
+            'descriptionEnglish',
             'logicExpression',
             'enabled',
             'type',
@@ -27,6 +31,28 @@ class RuleSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def _import_translation(self, rule, key):
+        """Reuse the English gloss stored with the originating ExtractedRule."""
+        from rule_import.models import ExtractedRule
+
+        cache = getattr(self, '_import_translation_cache', {})
+        if rule.rule_id not in cache:
+            extracted = (
+                ExtractedRule.objects.filter(imported_rule_id=rule.rule_id)
+                .only('source')
+                .order_by('-id')
+                .first()
+            )
+            cache[rule.rule_id] = extracted.source if extracted else {}
+            self._import_translation_cache = cache
+        return str((cache[rule.rule_id] or {}).get(key) or '')
+
+    def get_drugNameEnglish(self, obj):
+        return self._import_translation(obj, 'constrained_object_en')
+
+    def get_descriptionEnglish(self, obj):
+        return self._import_translation(obj, 'constraint_value_en')
 
     @staticmethod
     def _has_rule_code(value):

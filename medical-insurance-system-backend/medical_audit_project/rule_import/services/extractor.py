@@ -70,6 +70,17 @@ def fix_missing_headers(tables):
 
 
 def rule_is_header(headers):
+    # Real policy headers may contain explanatory parentheses. Recognize
+    # multiple physical column labels before applying data-row heuristics.
+    labels = (
+        '序号', '编号', '药品分类', '药品名称', '药品代码', '剂型',
+        '医疗服务项目', '项目名称', '项目代码', '检出逻辑', '逻辑依据',
+        '时间区间', '频次', '周期', '备注', '说明', '计价单位',
+        '医保统一编码', '国家编码', '项目内涵', '除外内容', '价格',
+    )
+    normalized = clean_header(headers)
+    if sum(any(h.startswith(label) for label in labels) for h in normalized if h) >= 2:
+        return True
     empty_count = sum(1 for h in headers if not h or str(h).strip() == "")
     if empty_count > len(headers) * 0.5:
         return False

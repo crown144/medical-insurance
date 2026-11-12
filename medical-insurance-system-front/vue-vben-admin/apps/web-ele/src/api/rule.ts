@@ -42,8 +42,26 @@ export interface RuleGenerateResult {
     fallback_reason?: string;
     valid: boolean;
   };
+  applicability_binding?: {
+    audit_function: string;
+    data_source: string;
+    field: string;
+    [key: string]: any;
+  };
+  constraint_bindings: Array<{
+    atomic_constraint_id: string;
+    audit_function: string;
+    capability_id?: null | string;
+    compilation_strategy?: string;
+    data_source: string;
+    field: string;
+    function_parameters: Record<string, any>;
+    [key: string]: any;
+  }>;
   generated_code: string;
   generated_python?: string;
+  readable_python?: string;
+  compiled_plan?: Record<string, any> | null;
   irr: {
     constraint_condition: string;
     constraint_object: string;
@@ -65,6 +83,7 @@ export interface RuleGenerateResult {
     valid: boolean;
   };
 }
+
 
 interface RuleCompileTaskStatus {
   data?: RuleGenerateResult | { error?: string; error_type?: string } | null;
@@ -141,6 +160,7 @@ export async function generateRuleApi(rulePk: number | string) {
   throw new Error('Rule compilation timed out. Please try again later or shorten the rule description.');
 }
 
+
 export async function validateRuleCodeApi(ruleCode: string) {
   const response = await baseRequestClient.post<any>('/rules/agenta/validate/', {
     rule_code: ruleCode,
@@ -181,4 +201,22 @@ export async function importGeneratedRuleApi(data: {
     { timeout: LLM_REQUEST_TIMEOUT },
   );
   return response.data?.result;
+}
+
+export async function requestRuleRevision(id: number | string, draft: any, feedback: string) {
+  const response = await baseRequestClient.post<any>(`/rules/${id}/revision/`, { draft, feedback }, { timeout: LLM_REQUEST_TIMEOUT });
+  return response.data?.result as {
+    draft: any;
+    changes: Array<{ section: string; before: any; after: any }>;
+    operations: Array<{ operation: string; target: string }>;
+    summary: string;
+  };
+}
+export async function recompileRuleDraft(id: number | string, draft: any) {
+  const response = await baseRequestClient.post<any>(`/rules/${id}/recompile/`, { draft });
+  return response.data?.result as RuleGenerateResult;
+}
+export async function getSavedCompilation(id: number | string) {
+  const response = await baseRequestClient.get<any>(`/rules/${id}/compilation/`);
+  return response.data?.result as RuleGenerateResult | null;
 }

@@ -20,6 +20,11 @@ CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
         'field': 'Generic Drug Name',
         'field_key': 'medication_name',
         'function': 'filter_list',
+        'allowed_evidence_paths': [
+            '用药信息.药品名',
+            '用药信息.药品通用名',
+            '用药信息.药品国家编码',
+        ],
         'parameter_schema': {
             'operator': {'type': 'string', 'enum': ['contains']},
             'match_values': {
@@ -45,6 +50,10 @@ CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
         'field': 'Diagnosis Name',
         'field_key': 'diagnosis_name',
         'function': 'filter_list',
+        'allowed_evidence_paths': [
+            '诊断.诊断名称',
+            '诊断.ICD10名称',
+        ],
         'parameter_schema': {
             'operator': {'type': 'string', 'enum': ['contains']},
             'match_values': {
@@ -58,7 +67,7 @@ CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
         ],
         'runtime': {
             'mode': 'list_filter',
-            'source_paths': ['诊断信息', '诊断'],
+            'source_paths': ['诊断'],
             'field_path': '诊断名称',
         },
     },
@@ -224,8 +233,8 @@ CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
         'supported_examples': ['The diagnosis-code list contains K21.'],
         'runtime': {
             'mode': 'list_membership',
-            'source_path': '诊断信息',
-            'field_path': 'ICD编码',
+            'source_path': '诊断',
+            'field_path': 'ICD10编码',
         },
     },
     'clinical_text_semantic_assessment': {
@@ -253,8 +262,11 @@ CAPABILITY_CATALOG: dict[str, dict[str, Any]] = {
             'context_paths': [
                 '入院记录.现病史',
                 '入院记录.既往史',
+                '入院记录.文档内容',
                 '入院记录.初步诊断',
                 '入院记录.更正诊断',
+                '首次病程记录.病例特点',
+                '首次病程记录.诊断依据',
             ],
         },
         'materialization_variants': {
@@ -278,15 +290,23 @@ def get_capability(capability_id: str) -> dict[str, Any] | None:
 
 def public_capability(capability_id: str) -> dict[str, Any]:
     capability = CAPABILITY_CATALOG[capability_id]
-    return {
+    result = {
         key: deepcopy(value)
         for key, value in capability.items()
         if key not in {
             'runtime', 'field_key', 'object_kinds', 'materialization_variants',
         }
     }
+    if 'allowed_evidence_paths' not in result:
+        runtime = capability.get('runtime') or {}
+        paths = runtime.get('context_paths')
+        if paths is None:
+            roots = runtime.get('source_paths') or [runtime.get('source_path')]
+            field = runtime.get('field_path')
+            paths = [f'{root}.{field}' for root in roots if root and field]
+        result['allowed_evidence_paths'] = deepcopy(paths)
+    return result
 
 
 def public_catalog(capability_ids: list[str]) -> list[dict[str, Any]]:
     return [public_capability(item) for item in capability_ids]
-

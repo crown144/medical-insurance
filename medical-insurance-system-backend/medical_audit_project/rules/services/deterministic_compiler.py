@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import ast
+import json
+from pathlib import Path
 from typing import Any
 
 
 APPROVED_CALLS = {
     'get_val', 'filter_list', 'calc_numeric_stats', 'calc_date_interval_stats',
     'calc_stats', 'list_contains', 'is_compare', 'llm_bool',
-    'submit_result', 'any', 'len', 'str',
+    'submit_result', 'execute_compiled_plan', 'any', 'len', 'str',
 }
 
 
@@ -15,6 +17,7 @@ def compile_rule(
     logic_tree: dict[str, Any] | str,
     applicability_binding: dict[str, Any],
     constraint_bindings: list[dict[str, Any]],
+    *, atomic_constraints: list[dict[str, Any]] | None = None,
 ) -> str:
     if (
         applicability_binding.get('status') != 'bound'
@@ -33,6 +36,60 @@ def compile_rule(
     ]
     if unbound:
         raise ValueError(f"Unbound atomic constraints: {', '.join(unbound)}")
+
+    schema_file = Path(__file__).resolve().parents[4] / 'field.json'
+    if not schema_file.is_file():
+        raise ValueError('EMR schema field.json is unavailable; compilation needs revision.')
+    schema = json.loads(schema_file.read_text(encoding='utf-8'))
+    all_bindings = [applicability_binding, *constraint_bindings]
+    for binding in all_bindings:
+        runtime = binding['runtime']
+        mode = runtime.get('mode', 'list_filter')
+        if mode not in {'list_filter', 'numeric_comparison', 'list_membership', 'llm_bool'}:
+            raise ValueError(f'Unsupported runtime mode {mode}; compilation needs revision.')
+        if runtime.get('relation') == 'same_time_with_applicability':
+            raise ValueError('Same-time charge binding needs revision before compilation.')
+        sources = binding.get('evidence_sources') or runtime.get('evidence_sources')
+        if sources is None:
+            roots = runtime.get('source_paths') or [runtime.get('source_path')]
+            paths = runtime.get('context_paths') or [
+                f"{root}.{runtime['field_path']}" for root in roots
+                if root and runtime.get('field_path')
+            ]
+            sources = [{'path': path} for path in paths]
+        if not sources:
+            raise ValueError('Binding has no physical evidence source; compilation needs revision.')
+        for source in sources:
+            path = source.get('path', '')
+            current = schema
+            for component in path.split('.'):
+                if isinstance(current, list):
+                    current = current[0] if current else {}
+                if not isinstance(current, dict) or component not in current:
+                    raise ValueError(f'Unknown EMR path {path!r}; compilation needs revision.')
+                current = current[component]
+
+    ids = {item['atomic_constraint_id'] for item in constraint_bindings}
+    def references(node):
+        if isinstance(node, str):
+            return {node}
+        if not isinstance(node, dict) or len(node) != 1:
+            raise ValueError('Invalid logic tree.')
+        operator, children = next(iter(node.items()))
+        if operator not in {'and', 'or', 'not'} or not isinstance(children, list) or not children or (operator == 'not' and len(children) != 1):
+            raise ValueError('Invalid logic tree operator.')
+        return set().union(*(references(child) for child in children))
+    unknown = references(logic_tree) - ids
+    if unknown:
+        raise ValueError(f'Unbound logic atoms: {", ".join(sorted(unknown))}.')
+    plan = {'logic': logic_tree, 'applicability': applicability_binding, 'constraints': constraint_bindings}
+    if atomic_constraints is not None:
+        plan['atomic_constraints'] = atomic_constraints
+    code = 'def execute_rule(ctx):\n    return submit_result(**execute_compiled_plan(ctx, ' + repr(plan) + '))'
+    validation = validate_generated_code(code)
+    if not validation['valid']:
+        raise ValueError('; '.join(validation['errors']))
+    return code
 
     applicability_runtime = applicability_binding['runtime']
     lines = [
@@ -66,8 +123,11 @@ def compile_rule(
             continue
         if mode == 'llm_bool':
             lines.append(f"    {variable}_context_parts = [")
-            for path in runtime['context_paths']:
-                lines.append(f"        str(get_val(ctx, {path!r}, default='')),")
+            sources = binding.get('evidence_sources') or runtime.get('evidence_sources') or [
+                {'path': path} for path in runtime.get('context_paths', [])
+            ]
+            for source in sources:
+                lines.append(f"        str(get_val(ctx, {source['path']!r}, default='')),")
             lines.extend([
                 '    ]',
                 f"    {variable}_context = ' '.join({variable}_context_parts)",

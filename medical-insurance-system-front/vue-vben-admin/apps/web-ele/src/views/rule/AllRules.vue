@@ -12,7 +12,6 @@ import {
   updateRule,
 } from '#/api/rule';
 import {
-  filterCompileRules,
   getDisplayRuleId,
   getRuleDescriptionEnglish,
   getRuleNameEnglish,
@@ -122,7 +121,7 @@ const fetchData = async () => {
       ordering: 'id',
     });
     const rawList = res?.results || (Array.isArray(res) ? res : []);
-    const demoList = applyLocalFilters(filterCompileRules(rawList.map(normalizeRule)));
+    const demoList = applyLocalFilters(rawList.map(normalizeRule));
     total.value = demoList.length;
     const start = (currentPage.value - 1) * pageSize.value;
     list.value = demoList.slice(start, start + pageSize.value);

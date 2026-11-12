@@ -245,16 +245,19 @@ def llm_bool(context_text: str, question: str) -> bool:
 # ==========================================
 # Interface 
 # ==========================================
-def submit_result(is_applicable: bool, is_compliant: bool = True, failure_message: str = "", evidence: Dict = None):
+def submit_result(is_applicable: bool, is_compliant: bool = True, failure_message: str = "", evidence: Dict = None, review_status: str = None):
     """
     标准化返回结果封装
     """
-    return {
+    result = {
         "is_applicable": is_applicable,  # 是否入组/适用
         "is_compliant": is_compliant,    # 是否合规
         "failure_message": failure_message if not is_compliant else "通过",
         "evidence": evidence or {}       # 审计证据链
     }
+    if review_status is not None:
+        result['review_status'] = review_status
+    return result
 
 
 # 收费项目名称和代码必须来自病历中的 ``收费报告``，不能用规则配置字段代替。
@@ -573,6 +576,8 @@ def check_indication_rule(patient_json: dict, target_rules=None) -> list:
 
 def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> list:
 
+    from .compiled_runtime import execute_compiled_plan
+
     logger.info(f"[RuleEngineV2] Starting check for type='{rule_type}'...")
     
 
@@ -608,6 +613,7 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
         'is_compare': is_compare, # Added for Price Check logic
         'llm_bool': llm_bool,
         'submit_result': submit_result,
+        'execute_compiled_plan': execute_compiled_plan,
         'json': json,
         're': re,
         'logger': logger,
@@ -641,6 +647,18 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
 
             res = execute_func(ctx)
 
+            if res.get('review_status') == 'needs_review':
+                logger.warning('Rule %s needs manual review; excluded from violation counts.', rule.rule_id)
+                all_results.append({
+                    'passed': None, 'violation': False, 'review_status': 'needs_review',
+                    'reason': res.get('failure_message', 'Insufficient evidence / Pending manual review'),
+                    'ruleId': rule.rule_id, 'evidence': res.get('evidence', {}),
+                    'highlights': res.get('evidence', {}).get('highlights', []),
+                    'rule': {'rule_id': rule.rule_id, 'drug_name': rule.drug_name,
+                             'description': rule.description, 'type': rule.type},
+                })
+                continue
+
             if not res.get('is_applicable', False):
                 continue
                 
@@ -667,6 +685,8 @@ def execute_db_rules(patient_json: dict, rule_type: str, target_rules=None) -> l
                     highlights = build_charge_highlights(
                         violation_item["收费明细"], evidence
                     )
+                if evidence:
+                    violation_item['audit_evidence'] = evidence
                 
                 all_results.append({
                     "passed": False,

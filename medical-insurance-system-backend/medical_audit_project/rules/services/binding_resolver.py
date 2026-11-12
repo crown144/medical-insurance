@@ -71,8 +71,7 @@ OBJECT_PROFILES = [
             '恩替卡韦口服溶液', '恩替卡韦',
         ),
         'match_values': [
-            '恩替卡韦口服溶液', '恩替卡韦',
-            'Entecavir Oral Solution', 'Entecavir',
+            '恩替卡韦口服溶液', 'Entecavir Oral Solution',
         ],
     },
     {
@@ -115,15 +114,22 @@ CONSTRAINT_PROFILES = [
     {
         'capability_id': 'diagnosis_name_matching',
         'keywords': (
-            'chronic hepatitis b', 'chronic hbv infection',
-            '慢性乙型肝炎', '慢性乙肝', '慢性hbv感染',
+            'chronic hepatitis b', '慢性乙型肝炎', '慢性乙肝',
         ),
         'parameters': {
             'operator': 'contains',
             'match_values': [
                 '慢性乙型肝炎', '慢性乙型病毒性肝炎', '慢性乙肝',
-                'Chronic hepatitis B', 'Chronic HBV infection',
+                'Chronic hepatitis B',
             ],
+        },
+    },
+    {
+        'capability_id': 'diagnosis_name_matching',
+        'keywords': ('chronic hbv infection', '慢性hbv感染'),
+        'parameters': {
+            'operator': 'contains',
+            'match_values': ['慢性HBV感染', 'Chronic HBV infection'],
         },
     },
     {
@@ -131,7 +137,7 @@ CONSTRAINT_PROFILES = [
         'keywords': ('compensated liver disease', 'compensated hepatic disease', '代偿性肝病'),
         'parameters': {
             'evidence_scope': 'clinical_narrative',
-            'question': 'Does the record establish chronic HBV infection with compensated liver disease?',
+            'question': 'Does the record establish that the liver disease is compensated?',
         },
     },
     {
@@ -196,11 +202,11 @@ CONSTRAINT_PROFILES = [
 TRACEABLE_ALIAS_GROUPS = [
     ('艾普拉唑', 'Ilaprazole'),
     ('醋酸钙', 'Calcium acetate', 'Calcium acetate tablets'),
-    ('恩替卡韦口服溶液', '恩替卡韦', 'Entecavir Oral Solution', 'Entecavir'),
+    ('恩替卡韦口服溶液', 'Entecavir Oral Solution'),
     (
-        '慢性乙型肝炎', '慢性乙型病毒性肝炎', '慢性乙肝', '慢性HBV感染',
-        'chronic hepatitis b', 'chronic hbv infection',
+        '慢性乙型肝炎', '慢性乙型病毒性肝炎', '慢性乙肝', 'chronic hepatitis b',
     ),
+    ('慢性HBV感染', 'chronic hbv infection'),
     ('十二指肠溃疡', 'Duodenal ulcer'),
     ('反流性食管炎', '胃食管反流', 'Reflux esophagitis', 'Gastroesophageal reflux'),
     ('高磷血症', 'Hyperphosphatemia'),
@@ -477,6 +483,18 @@ def materialize_binding(
         materialized_field = variant['field']
         materialized_field_key = variant['field_key']
 
+    paths = runtime.get('context_paths') or [
+        f"{source}.{runtime['field_path']}"
+        for source in (runtime.get('source_paths') or [runtime.get('source_path')])
+        if source and runtime.get('field_path')
+    ]
+    evidence_sources = [
+        {'data_source': path.rsplit('.', 1)[0],
+         'field': path.rsplit('.', 1)[1], 'path': path}
+        for path in paths if '.' in path
+    ]
+    runtime['evidence_sources'] = deepcopy(evidence_sources)
+
     common = {
         'binding_type': role,
         'capability_id': capability_id,
@@ -485,6 +503,9 @@ def materialize_binding(
         'data_source': capability['data_source'],
         'field': materialized_field,
         'field_key': materialized_field_key,
+        'logical_label': materialized_field,
+        'evidence_sources': evidence_sources,
+        'source_count': len(evidence_sources),
         'audit_function': capability['function'],
         'function_parameters': function_parameters,
         'expected_condition': True if role == 'applicability' else atom['normalized_constraint'],

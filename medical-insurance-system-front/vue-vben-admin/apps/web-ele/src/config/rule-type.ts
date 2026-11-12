@@ -69,7 +69,7 @@ const RULE_NAME_LABEL_MAP: Record<string, string> = {
   连续性血液净化: 'Continuous blood purification',
   醋酸钙: 'Calcium acetate tablets',
   尿液分析: 'Urinalysis',
-  糖化血红蛋白测定: 'Glycated hemoglobin test',
+  糖化血红蛋白测定: 'Glycated Hemoglobin Assay',
   机械辅助排痰: 'Mechanical assisted sputum clearance',
   动脉加压注射: 'Arterial pressure injection',
   动脉采血: 'Arterial blood collection',

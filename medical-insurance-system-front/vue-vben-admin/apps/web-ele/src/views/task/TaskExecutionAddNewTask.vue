@@ -5,15 +5,13 @@ import type {
   RuleItem,
 } from '../../api/model/taskModel';
 
-import { nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
 import { useRouter } from 'vue-router';
 
 import { Delete, Plus, Refresh, Search } from '@element-plus/icons-vue';
 import {
   ElAlert,
   ElButton,
-  ElCheckbox,
-  ElCollapseTransition,
   ElDatePicker,
   ElEmpty,
   ElIcon,
@@ -35,11 +33,10 @@ import {
 } from '../../api/task';
 import { DEMO_MODE } from '../../config/demo';
 import {
-  filterDemoRules,
   getDisplayRuleId,
-  isDemoRuleType,
   getRuleDescriptionEnglish,
   getRuleNameEnglish,
+  getRuleTypeLabel,
 } from '../../config/rule-type';
 // import RepeatChargingRuleSelector from '../../components/RepeatChargingRuleSelector.vue'; // 已废弃
 
@@ -70,13 +67,6 @@ const caseInputVisible = ref(false);
 const caseInputValue = ref('');
 const caseInputRef = ref<InstanceType<typeof ElInput>>();
 
-const detectionSchemes = ref({
-  overLimit: true,
-  overStandard: false,
-  repeatCharging: false,
-  overFrequency: false,
-  overMedical: false,
-});
 const allRules = ref<RuleItem[]>([]);
 const isLoadingRules = ref(true);
 const isCreatingTask = ref(false);
@@ -87,79 +77,6 @@ const inhosSearchWarning = ref('');
 const inhosSearchLimit = ref(0);
 const demoCases = ref<DemoCaseItem[]>([]);
 const isLoadingDemoCases = ref(false);
-
-const DEMO_RULE_FALLBACKS: RuleItem[] = [
-  {
-    id: 1,
-    ruleId: 'R-0001',
-    drug_name: '艾普拉唑',
-    description: '使用艾普拉唑须有十二指肠溃疡、反流性食管炎诊断',
-    type: '超限定用药',
-  },
-  {
-    id: 14,
-    ruleId: 'R-0002',
-    drug_name: '醋酸钙',
-    description: '使用醋酸钙须有高磷血症诊断',
-    type: '超限定用药',
-  },
-  {
-    id: 29,
-    ruleId: 'R-20260704151155530323',
-    drug_name: '胃肠减压',
-    description: '插胃管加收10元',
-    type: '超标准收费',
-  },
-  {
-    id: 30,
-    ruleId: 'R-20260704151155864177',
-    drug_name: '耳部特殊治疗',
-    description: '原价79元，射频、激光、微波加收20元；等离子加收50元；冷冻减收55元',
-    type: '超标准收费',
-  },
-  {
-    id: 37,
-    ruleId: 'R-20260704151200686615',
-    drug_name: '静脉注射',
-    description: '“静脉注射”与“静脉采血”不能同时开',
-    type: '重复收费',
-  },
-  {
-    id: 38,
-    ruleId: 'R-20260704151201033234',
-    drug_name: '动脉加压注射',
-    description: '“动脉加压注射”与“动脉采血”不能同时开',
-    type: '重复收费',
-  },
-  {
-    id: 47,
-    ruleId: 'R-20260704151207016105',
-    drug_name: '机械辅助排痰',
-    description: '机械辅助排痰使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日',
-    type: '超频次收费',
-  },
-  {
-    id: 48,
-    ruleId: 'R-20260704151207710658',
-    drug_name: '胃肠减压',
-    description: '使用项目的数量总计超过上限数量，单日上限数量1，项目收费单位日',
-    type: '超频次收费',
-  },
-  {
-    id: 66,
-    ruleId: 'R-20260709123055310514',
-    drug_name: '血气分析',
-    description: '收取“血气分析”费用的同时收取“血清碳酸氢盐(HCO3)测定”费用',
-    type: '过度医疗',
-  },
-  {
-    id: 67,
-    ruleId: 'R-20260709124003677192',
-    drug_name: '尿液分析',
-    description: '收取尿液分析费用时，同时收取尿沉渣白细胞分类费用或尿蛋白定量费用',
-    type: '过度医疗',
-  },
-];
 
 /** 规则名提取：从描述中提取规则名 (复用自 RuleDetail.vue) */
 function extractRuleName(desc: string) {
@@ -193,209 +110,40 @@ function processRules(data: any): RuleItem[] {
   }));
 }
 
-function processDemoRules(data: any): RuleItem[] {
-  return processRules(filterDemoRules(Array.isArray(data) ? data : data?.items || data?.results || []));
-}
-
-function filterRulesByType(items: RuleItem[], type: string, keyword = '') {
-  const query = keyword.trim().toLowerCase();
-  return items.filter((item) => {
-    if (!isDemoRuleType(item, type)) return false;
-    if (!query) return true;
-    return [item.ruleId, item.displayRuleId, item.drug_name, item.description, item.type]
-      .join(' ')
-      .toLowerCase()
-      .includes(query);
-  });
-}
-
-async function loadDemoRuleList() {
-  const res = await getRuleListApi({ paginate: 'false', ordering: 'id' });
-  const rules = processDemoRules(res);
-  const ruleMap = new Map<string, RuleItem>();
-  for (const rule of DEMO_RULE_FALLBACKS) {
-    ruleMap.set(rule.ruleId, rule);
-  }
-  for (const rule of rules) {
-    ruleMap.set(rule.ruleId, rule);
-  }
-  return Array.from(ruleMap.values()).map((rule) => ({
-    ...rule,
-    displayRuleId: getDisplayRuleId(rule.ruleId),
-  }));
-}
-
 function getDisplayRuleName(row: RuleItem) {
-  return getRuleNameEnglish(row.drug_name) || row.drug_name || '-';
+  return getRuleNameEnglish(row.drug_name) || (row as any).drugNameEnglish || row.drug_name || '-';
 }
 
 function getDisplayRuleDescription(row: RuleItem) {
-  return getRuleDescriptionEnglish(row.description) || row.description || '-';
+  return (row as any).descriptionEnglish || getRuleDescriptionEnglish(row.description) || row.description || '-';
 }
 
-// 新增：重复收费 & 超标准收费 的状态
-const repeatRules = ref<RuleItem[]>([]);
-const isLoadingRepeatRules = ref(false);
-const repeatRuleSearchQuery = ref('');
-const selectedRepeatRuleIds = ref<number[]>([]);
-
-const overStandardRules = ref<RuleItem[]>([]);
-const isLoadingOverStandardRules = ref(false);
-const overStandardRuleSearchQuery = ref('');
-const selectedOverStandardRuleIds = ref<number[]>([]);
-
-const overFrequencyRules = ref<RuleItem[]>([]);
-const isLoadingOverFrequencyRules = ref(false);
-const overFrequencyRuleSearchQuery = ref('');
-const selectedOverFrequencyRuleIds = ref<number[]>([]);
-
-const overMedicalRules = ref<RuleItem[]>([]);
-const isLoadingOverMedicalRules = ref(false);
-const overMedicalRuleSearchQuery = ref('');
-const selectedOverMedicalRuleIds = ref<number[]>([]);
-
-// --- 业务逻辑 ---
-
-// 1. 加载重复收费规则 (使用 getRuleListApi 查 rules_rule 表)
-const loadRepeatRules = async () => {
-  if (!detectionSchemes.value.repeatCharging) {
-    repeatRules.value = [];
-    return;
-  }
-  isLoadingRepeatRules.value = true;
-  try {
-    repeatRules.value = filterRulesByType(
-      await loadDemoRuleList(),
-      '重复收费',
-      repeatRuleSearchQuery.value,
-    );
-  } catch (error) {
-    console.error('加载重复收费规则失败', error);
-  } finally {
-    isLoadingRepeatRules.value = false;
-  }
-};
-
-watch(
-  [() => detectionSchemes.value.repeatCharging, repeatRuleSearchQuery],
-  loadRepeatRules,
-  { deep: true },
+const supportedRuleTypes = new Set(['超限定用药', '超标准收费', '重复收费']);
+const selectedRules = ref<RuleItem[]>([]);
+const filteredRules = computed(() => {
+  const query = ruleSearchQuery.value.trim().toLowerCase();
+  if (!query) return allRules.value;
+  return allRules.value.filter((rule) => [
+    rule.ruleId, rule.drug_name, rule.type, rule.description,
+    getDisplayRuleName(rule), getDisplayRuleDescription(rule),
+    getRuleTypeLabel(rule.type),
+  ].join(' ').toLowerCase().includes(query));
+});
+const unsupportedSelectedRules = computed(() =>
+  selectedRules.value.filter((rule) => !supportedRuleTypes.has(rule.type)),
 );
-
-// 2. 加载超标准收费规则
-const loadOverStandardRules = async () => {
-  if (!detectionSchemes.value.overStandard) {
-    overStandardRules.value = [];
-    return;
-  }
-  isLoadingOverStandardRules.value = true;
-  try {
-    overStandardRules.value = filterRulesByType(
-      await loadDemoRuleList(),
-      '超标准收费',
-      overStandardRuleSearchQuery.value,
-    );
-  } catch (error) {
-    console.error('加载超标准收费规则失败', error);
-  } finally {
-    isLoadingOverStandardRules.value = false;
-  }
-};
-
-watch(
-  [() => detectionSchemes.value.overStandard, overStandardRuleSearchQuery],
-  loadOverStandardRules,
-  { deep: true },
-);
-
-// 选择事件处理
-const handleRepeatSelectionChange = (selectedRows: RuleItem[]) => {
-  selectedRepeatRuleIds.value = selectedRows.map((row) => row.id);
-};
-
-const handleOverStandardSelectionChange = (selectedRows: RuleItem[]) => {
-  selectedOverStandardRuleIds.value = selectedRows.map((row) => row.id);
-};
-
-const loadOverFrequencyRules = async () => {
-  if (!detectionSchemes.value.overFrequency) {
-    overFrequencyRules.value = [];
-    return;
-  }
-  isLoadingOverFrequencyRules.value = true;
-  try {
-    overFrequencyRules.value = filterRulesByType(
-      await loadDemoRuleList(),
-      '超频次收费',
-      overFrequencyRuleSearchQuery.value,
-    );
-  } catch (error) {
-    console.error('加载超频次收费规则失败', error);
-  } finally {
-    isLoadingOverFrequencyRules.value = false;
-  }
-};
-
-watch(
-  [() => detectionSchemes.value.overFrequency, overFrequencyRuleSearchQuery],
-  loadOverFrequencyRules,
-  { deep: true },
-);
-
-const loadOverMedicalRules = async () => {
-  if (!detectionSchemes.value.overMedical) {
-    overMedicalRules.value = [];
-    return;
-  }
-  isLoadingOverMedicalRules.value = true;
-  try {
-    overMedicalRules.value = filterRulesByType(
-      await loadDemoRuleList(),
-      '过度医疗',
-      overMedicalRuleSearchQuery.value,
-    );
-  } catch (error) {
-    console.error('加载过度医疗规则失败', error);
-  } finally {
-    isLoadingOverMedicalRules.value = false;
-  }
-};
-
-watch(
-  [() => detectionSchemes.value.overMedical, overMedicalRuleSearchQuery],
-  loadOverMedicalRules,
-  { deep: true },
-);
-
-const handleOverFrequencySelectionChange = (selectedRows: RuleItem[]) => {
-  selectedOverFrequencyRuleIds.value = selectedRows.map((row) => row.id);
-};
-
-const handleOverMedicalSelectionChange = (selectedRows: RuleItem[]) => {
-  selectedOverMedicalRuleIds.value = selectedRows.map((row) => row.id);
-};
 
 const loadAllRules = async () => {
-  if (!detectionSchemes.value.overLimit) {
-    allRules.value = [];
-    isLoadingRules.value = false;
-    return;
-  }
   isLoadingRules.value = true;
   try {
-    allRules.value = filterRulesByType(
-      await loadDemoRuleList(),
-      '超限定用药',
-      ruleSearchQuery.value,
-    );
+    allRules.value = processRules(await getRuleListApi({ paginate: 'false', ordering: 'id' }));
   } catch (error) {
-    console.error('加载规则失败', error);
+    console.error('Failed to load rules', error);
+    ElMessage.error('Failed to load rules.');
   } finally {
     isLoadingRules.value = false;
   }
 };
-
-watch([detectionSchemes, ruleSearchQuery], loadAllRules, { deep: true });
 onMounted(loadAllRules);
 
 const loadDemoCases = async () => {
@@ -511,13 +259,8 @@ const handleCaseInputConfirm = () => {
 };
 
 const handleRuleSelectionChange = (selectedRows: RuleItem[]) => {
+  selectedRules.value = selectedRows;
   form.value.selected_rule_ids = selectedRows.map((row) => row.id);
-};
-
-const getRuleIdsForPayload = (selectedIds: number[], visibleRules: RuleItem[]) => {
-  return selectedIds.length > 0
-    ? selectedIds
-    : visibleRules.map((rule) => rule.id);
 };
 
 const normalizeHospitalizationId = (value?: string) => {
@@ -538,52 +281,17 @@ const createTask = async () => {
         : 'Please enter at least one hospitalization ID.',
     );
 
-  // 简化的校验逻辑...
-  const selectedSchemas: string[] = [];
-  if (detectionSchemes.value.overLimit) selectedSchemas.push('超限定用药');
-  if (detectionSchemes.value.overStandard) selectedSchemas.push('超标准收费');
-  if (detectionSchemes.value.repeatCharging) selectedSchemas.push('重复收费');
-  if (detectionSchemes.value.overFrequency) selectedSchemas.push('超频次收费');
-  if (detectionSchemes.value.overMedical) selectedSchemas.push('过度医疗');
-
-  if (selectedSchemas.length === 0)
-    return ElMessage.warning('Please select at least one detection scheme.');
+  if (selectedRules.value.length === 0) {
+    return ElMessage.warning('Please select at least one audit rule.');
+  }
+  if (unsupportedSelectedRules.value.length) {
+    return ElMessage.warning('Some selected rule categories are not supported by task execution. Please deselect them.');
+  }
+  const selectedSchemas = [...new Set(selectedRules.value.map((rule) => rule.type).filter(Boolean))];
+  const allSelectedRuleIds = selectedRules.value.map((rule) => rule.id);
 
   isCreatingTask.value = true;
   try {
-    // 聚合所有选中的规则ID
-    const allSelectedRuleIds = [
-      ...(detectionSchemes.value.overLimit
-        ? getRuleIdsForPayload(form.value.selected_rule_ids, allRules.value)
-        : []),
-      ...(detectionSchemes.value.overStandard
-        ? getRuleIdsForPayload(
-            selectedOverStandardRuleIds.value,
-            overStandardRules.value,
-          )
-        : []),
-      ...(detectionSchemes.value.repeatCharging
-        ? getRuleIdsForPayload(selectedRepeatRuleIds.value, repeatRules.value)
-        : []),
-      ...(detectionSchemes.value.overFrequency
-        ? getRuleIdsForPayload(
-            selectedOverFrequencyRuleIds.value,
-            overFrequencyRules.value,
-          )
-        : []),
-      ...(detectionSchemes.value.overMedical
-        ? getRuleIdsForPayload(
-            selectedOverMedicalRuleIds.value,
-            overMedicalRules.value,
-          )
-        : []),
-    ];
-
-    if (allSelectedRuleIds.length === 0) {
-      ElMessage.warning('No demo rules are available for the selected schemes.');
-      return;
-    }
-
     const payload = {
       name: form.value.name,
       mdc_org_cd: '',
@@ -834,328 +542,59 @@ const goBack = () => router.back();
 
       <div class="section-title">3. Audit Rule Configuration</div>
       <div class="query-card">
-        <div class="scheme-select-row">
-          <div class="query-label mb-2">Detection Scheme Selection</div>
-          <div class="checkbox-group-styled">
-            <ElCheckbox
-              v-model="detectionSchemes.overLimit"
-              label="Restricted Medication"
-              border
+        <div class="rule-table-container">
+          <div class="rule-header">
+            <span class="sub-title">
+              All Rules
+              <span class="ml-2 text-xs text-blue-500">{{ selectedRules.length }} selected</span>
+            </span>
+            <ElInput
+              v-model="ruleSearchQuery"
+              placeholder="Search rules..."
+              :prefix-icon="Search"
+              clearable
+              style="width: 250px"
+              size="small"
             />
-            <ElCheckbox
-              v-model="detectionSchemes.overStandard"
-              label="Over-standard Charge"
+          </div>
+          <ElAlert
+            v-if="unsupportedSelectedRules.length"
+            class="mb-3"
+            type="warning"
+            :closable="false"
+            show-icon
+            title="Some selected rule categories are not supported by task execution. Deselect them before creating the task."
+          />
+          <div class="table-card">
+            <ElTable
+              :data="filteredRules"
+              v-loading="isLoadingRules"
+              @selection-change="handleRuleSelectionChange"
+              height="350"
               border
-            />
-            <ElCheckbox
-              v-model="detectionSchemes.repeatCharging"
-              label="Duplicate Charge"
-              border
-            />
-            <ElCheckbox
-              v-model="detectionSchemes.overFrequency"
-              label="Excessive Frequency"
-              border
-            />
-            <ElCheckbox
-              v-model="detectionSchemes.overMedical"
-              label="Overutilization"
-              border
-            />
+              class="task-table"
+              row-key="id"
+            >
+              <ElTableColumn type="selection" width="50" align="center" :reserve-selection="true" />
+              <ElTableColumn prop="displayRuleId" label="Rule ID" width="120" />
+              <ElTableColumn label="Rule Name" min-width="180" show-overflow-tooltip>
+                <template #default="{ row }">
+                  <span class="font-bold text-gray-700">{{ getDisplayRuleName(row) }}</span>
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="Rule Category" min-width="170" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getRuleTypeLabel(row.type) || row.type || '—' }}
+                </template>
+              </ElTableColumn>
+              <ElTableColumn label="Description" min-width="250" show-overflow-tooltip>
+                <template #default="{ row }">
+                  {{ getDisplayRuleDescription(row) }}
+                </template>
+              </ElTableColumn>
+            </ElTable>
           </div>
         </div>
-
-        <ElCollapseTransition>
-          <div v-if="detectionSchemes.overLimit" class="rule-table-container">
-            <div class="rule-header">
-              <span class="sub-title"
-                >Configure Restricted Medication Rules
-                <span class="ml-2 text-xs text-blue-500"
-                  >{{ form.selected_rule_ids.length }} selected</span
-                ></span
-              >
-              <ElInput
-                v-model="ruleSearchQuery"
-                placeholder="Search rule names..."
-                :prefix-icon="Search"
-                style="width: 250px"
-                size="small"
-              />
-            </div>
-
-            <div class="table-card">
-              <ElTable
-                :data="allRules"
-                v-loading="isLoadingRules"
-                @selection-change="handleRuleSelectionChange"
-                height="350"
-                border
-                class="task-table"
-                row-key="id"
-              >
-                <ElTableColumn
-                  type="selection"
-                  width="50"
-                  align="center"
-                  :reserve-selection="true"
-                />
-                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
-                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
-                  <template #default="{ row }">
-                    <span class="font-bold text-gray-700">{{
-                      getDisplayRuleName(row)
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="description"
-                  label="Description"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ getDisplayRuleDescription(row) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </div>
-          </div>
-        </ElCollapseTransition>
-
-        <ElCollapseTransition>
-          <div
-            v-if="detectionSchemes.repeatCharging"
-            class="mt-4 border-t border-dashed border-gray-200 pt-4"
-          >
-            <div class="rule-header">
-              <span class="sub-title"
-                >Configure Duplicate Charge Rules
-                <span class="ml-2 text-xs text-blue-500"
-                  >{{ selectedRepeatRuleIds.length }} selected / {{ repeatRules.length }} available</span
-                ></span
-              >
-              <ElInput
-                v-model="repeatRuleSearchQuery"
-                placeholder="Search rule names..."
-                :prefix-icon="Search"
-                style="width: 250px"
-                size="small"
-              />
-            </div>
-
-            <div class="table-card mt-4">
-              <ElTable
-                :data="repeatRules"
-                v-loading="isLoadingRepeatRules"
-                height="350"
-                border
-                class="task-table"
-                @selection-change="handleRepeatSelectionChange"
-                row-key="id"
-              >
-                <ElTableColumn
-                  type="selection"
-                  width="50"
-                  align="center"
-                  :reserve-selection="true"
-                />
-                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
-                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
-                  <template #default="{ row }">
-                    <span class="font-bold text-gray-700">{{
-                      getDisplayRuleName(row)
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="description"
-                  label="Description"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ getDisplayRuleDescription(row) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </div>
-          </div>
-        </ElCollapseTransition>
-
-        <ElCollapseTransition>
-          <div
-            v-if="detectionSchemes.overStandard"
-            class="mt-4 border-t border-dashed border-gray-200 pt-4"
-          >
-            <div class="rule-header">
-              <span class="sub-title"
-                >Configure Over-standard Charge Rules
-                <span class="ml-2 text-xs text-blue-500"
-                  >{{ selectedOverStandardRuleIds.length }} selected</span
-                ></span
-              >
-              <ElInput
-                v-model="overStandardRuleSearchQuery"
-                placeholder="Search rule names..."
-                :prefix-icon="Search"
-                style="width: 250px"
-                size="small"
-              />
-            </div>
-
-            <div class="table-card mt-4">
-              <ElTable
-                :data="overStandardRules"
-                v-loading="isLoadingOverStandardRules"
-                height="350"
-                border
-                class="task-table"
-                @selection-change="handleOverStandardSelectionChange"
-                row-key="id"
-              >
-                <ElTableColumn
-                  type="selection"
-                  width="50"
-                  align="center"
-                  :reserve-selection="true"
-                />
-                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
-                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
-                  <template #default="{ row }">
-                    <span class="font-bold text-gray-700">{{
-                      getDisplayRuleName(row)
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="description"
-                  label="Description"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ getDisplayRuleDescription(row) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </div>
-          </div>
-        </ElCollapseTransition>
-
-        <ElCollapseTransition>
-          <div
-            v-if="detectionSchemes.overFrequency"
-            class="mt-4 border-t border-dashed border-gray-200 pt-4"
-          >
-            <div class="rule-header">
-              <span class="sub-title"
-                >Configure Excessive Frequency Rules
-                <span class="ml-2 text-xs text-blue-500"
-                  >{{ selectedOverFrequencyRuleIds.length }} selected</span
-                ></span
-              >
-              <ElInput
-                v-model="overFrequencyRuleSearchQuery"
-                placeholder="Search rule names..."
-                :prefix-icon="Search"
-                style="width: 250px"
-                size="small"
-              />
-            </div>
-
-            <div class="table-card mt-4">
-              <ElTable
-                :data="overFrequencyRules"
-                v-loading="isLoadingOverFrequencyRules"
-                height="350"
-                border
-                class="task-table"
-                @selection-change="handleOverFrequencySelectionChange"
-                row-key="id"
-              >
-                <ElTableColumn
-                  type="selection"
-                  width="50"
-                  align="center"
-                  :reserve-selection="true"
-                />
-                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
-                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
-                  <template #default="{ row }">
-                    <span class="font-bold text-gray-700">{{
-                      getDisplayRuleName(row)
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="description"
-                  label="Description"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ getDisplayRuleDescription(row) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </div>
-          </div>
-        </ElCollapseTransition>
-
-        <ElCollapseTransition>
-          <div
-            v-if="detectionSchemes.overMedical"
-            class="mt-4 border-t border-dashed border-gray-200 pt-4"
-          >
-            <div class="rule-header">
-              <span class="sub-title"
-                >Configure Overutilization Rules
-                <span class="ml-2 text-xs text-blue-500"
-                  >{{ selectedOverMedicalRuleIds.length }} selected</span
-                ></span
-              >
-              <ElInput
-                v-model="overMedicalRuleSearchQuery"
-                placeholder="Search rule names..."
-                :prefix-icon="Search"
-                style="width: 250px"
-                size="small"
-              />
-            </div>
-
-            <div class="table-card mt-4">
-              <ElTable
-                :data="overMedicalRules"
-                v-loading="isLoadingOverMedicalRules"
-                height="350"
-                border
-                class="task-table"
-                @selection-change="handleOverMedicalSelectionChange"
-                row-key="id"
-              >
-                <ElTableColumn
-                  type="selection"
-                  width="50"
-                  align="center"
-                  :reserve-selection="true"
-                />
-                <ElTableColumn prop="displayRuleId" label="Rule ID" width="100" />
-                <ElTableColumn prop="drug_name" label="Rule Name" width="180">
-                  <template #default="{ row }">
-                    <span class="font-bold text-gray-700">{{
-                      getDisplayRuleName(row)
-                    }}</span>
-                  </template>
-                </ElTableColumn>
-                <ElTableColumn
-                  prop="description"
-                  label="Description"
-                  show-overflow-tooltip
-                >
-                  <template #default="{ row }">
-                    {{ getDisplayRuleDescription(row) }}
-                  </template>
-                </ElTableColumn>
-              </ElTable>
-            </div>
-          </div>
-        </ElCollapseTransition>
       </div>
     </div>
   </div>

@@ -11,7 +11,8 @@ import httpx
 from django.conf import settings
 from openai import OpenAI
 
-from .binding_resolver import resolve_bindings
+from .binding_resolver import materialize_binding, resolve_bindings
+from .capability_catalog import CAPABILITY_CATALOG
 from .deterministic_compiler import compile_rule, validate_generated_code
 from .llm_binding_resolver import request_binding_plan
 from .semantic_decomposer import (
@@ -30,7 +31,7 @@ TEMP_DISABLE_LLM_ENV = 'AGENTA_DISABLE_LLM_TEST'
 APPROVED_AUDIT_FUNCTIONS = {
     'get_val', 'filter_list', 'calc_numeric_stats', 'calc_date_interval_stats',
     'calc_stats', 'list_contains',
-    'is_compare', 'llm_bool', 'submit_result',
+    'is_compare', 'llm_bool', 'submit_result', 'execute_compiled_plan',
 }
 SAFE_BUILTINS = {
     'all', 'any', 'bool', 'dict', 'enumerate', 'float', 'int', 'len',
@@ -193,12 +194,16 @@ class AgentAService:
                 'errors': binding_validation['errors'],
             }
         else:
-            generated_code = compile_rule(
-                logic_tree,
-                applicability_binding,
-                constraint_bindings,
-            )
-            validation = validate_generated_code(generated_code)
+            try:
+                generated_code = compile_rule(
+                    logic_tree,
+                    applicability_binding,
+                    constraint_bindings,
+                )
+                validation = validate_generated_code(generated_code)
+            except ValueError as exc:
+                generated_code = ''
+                validation = {'valid': False, 'errors': [str(exc)]}
 
         snapshot = {
             'matched_rule_id': None,
@@ -253,6 +258,115 @@ class AgentAService:
             binding_validation=binding_validation,
             raw_output=raw_output,
             finish_reason=finish_reason,
+        )
+
+    @classmethod
+    def build_from_draft(cls, draft: dict[str, Any]) -> AgentAGenerationResult:
+        """Compile an approved UI draft without asking the model to infer it again."""
+        if not isinstance(draft, dict):
+            raise ValueError('A structured compilation draft is required.')
+        irr = cls._normalize_irr(draft.get('irr'), '')
+        atoms = draft.get('atomic_constraints')
+        logic_tree = draft.get('logic_tree')
+        if not isinstance(atoms, list) or not atoms:
+            raise ValueError('The draft must contain at least one atomic constraint.')
+        if not isinstance(logic_tree, (dict, str)):
+            raise ValueError('The draft logic tree is invalid.')
+        atom_map = {}
+        for item in atoms:
+            if not isinstance(item, dict) or not item.get('id') or not item.get('normalized_constraint'):
+                raise ValueError('Each atomic constraint requires an ID and normalized constraint.')
+            atom_map[str(item['id'])] = item
+        referenced = cls._logic_references(logic_tree)
+        unknown = referenced - set(atom_map)
+        if unknown:
+            raise ValueError(f"Logic references unknown atomic IDs: {', '.join(sorted(unknown))}.")
+
+        applicability = cls._rehydrate_binding(
+            draft.get('applicability_binding'), role='applicability', irr=irr,
+        )
+        supplied = {
+            str(item.get('atomic_constraint_id')): item
+            for item in (draft.get('constraint_bindings') or [])
+            if isinstance(item, dict)
+        }
+        bindings = []
+        for atom in atoms:
+            binding = supplied.get(str(atom['id']))
+            if not binding:
+                raise ValueError(f"{atom['id']} has no execution binding.")
+            bindings.append(cls._rehydrate_binding(
+                binding, role='constraint', atom=atom, irr=irr,
+            ))
+
+        generated_code = compile_rule(logic_tree, applicability, bindings)
+        validation = validate_generated_code(generated_code)
+        public_applicability = {k: v for k, v in applicability.items() if k != 'runtime'}
+        public_constraints = [{k: v for k, v in item.items() if k != 'runtime'} for item in bindings]
+        execution_bindings = [
+            {**public_applicability, 'atomic_constraint_id': 'Applicability', 'role': 'applicability'},
+            *({**item, 'role': 'condition'} for item in public_constraints),
+        ]
+        tools = sorted({item['audit_function'] for item in [applicability, *bindings]} | {'get_val', 'submit_result'})
+        return AgentAGenerationResult(
+            rule_text=irr['constraint_condition'],
+            system_prompt={'style': 'human_corrected_draft'},
+            tool_schema=tools,
+            generated_code=generated_code,
+            validation=validation,
+            rule_snapshot={'runtime_mode': 'human_corrected_draft', 'runtime_label': 'Human-corrected draft compiled deterministically'},
+            irr=irr,
+            atomic_constraints=atoms,
+            logic_tree=logic_tree,
+            logical_expression=render_logic_expression(logic_tree),
+            applicability_binding=public_applicability,
+            constraint_bindings=public_constraints,
+            execution_bindings=execution_bindings,
+            binding_source='human_corrected',
+            binding_validation={'valid': True, 'errors': []},
+            raw_output=None,
+            finish_reason='human_corrected',
+        )
+
+    @staticmethod
+    def _logic_references(node: Any) -> set[str]:
+        if isinstance(node, str):
+            return {node}
+        if not isinstance(node, dict):
+            return set()
+        return {
+            item for values in node.values() if isinstance(values, list)
+            for value in values for item in AgentAService._logic_references(value)
+        }
+
+    @staticmethod
+    def _rehydrate_binding(raw: Any, *, role: str, irr: dict[str, str], atom=None):
+        if not isinstance(raw, dict):
+            raise ValueError(f'{role.title()} binding is invalid.')
+        capability_id = str(raw.get('capability_id') or '')
+        capability = CAPABILITY_CATALOG.get(capability_id)
+        if not capability or role not in capability.get('roles', []):
+            raise ValueError(f'{role.title()} binding has an unsupported audit capability.')
+        requested_source = raw.get('data_source') or capability['data_source']
+        requested_field = raw.get('field') or capability['field']
+        if (requested_source, requested_field) != (capability['data_source'], capability['field']):
+            compatible = next((
+                (candidate_id, candidate) for candidate_id, candidate in CAPABILITY_CATALOG.items()
+                if role in candidate.get('roles', [])
+                and candidate['data_source'] == requested_source
+                and candidate['field'] == requested_field
+                and candidate['function'] == capability['function']
+            ), None)
+            if not compatible:
+                raise ValueError(
+                    f"{role.title()} binding: {requested_source} / {requested_field} is incompatible with {capability['function']}()."
+                )
+            capability_id, capability = compatible
+        parameters = raw.get('function_parameters') or {}
+        return materialize_binding(
+            capability_id, parameters, role=role, atom=atom,
+            object_text=irr['constraint_object'],
+            compilation_strategy=raw.get('compilation_strategy') or 'human_corrected',
         )
 
     @staticmethod

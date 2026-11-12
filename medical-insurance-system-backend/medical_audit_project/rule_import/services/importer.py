@@ -7,6 +7,7 @@
 """
 
 import logging
+import re
 
 from django.db import transaction
 
@@ -26,6 +27,37 @@ RULE_TYPE_MAP = {
     "OVER_EXAMINATION": "过度医疗",
     "OTHER": "其他",
 }
+
+
+def _normalized_rule_text(value):
+    """Produce a conservative content key without changing the saved policy text."""
+    return re.sub(r"\s+", "", str(value or "")).casefold()
+
+
+def _find_existing_equivalent_rule(rule_type, constrained_object, constraint_value):
+    """Find the same imported rule even when it originated from another task.
+
+    The object, condition, and rule type are all included deliberately: two
+    restrictions for the same medication/service must remain separate rules.
+    """
+    target = (
+        _normalized_rule_text(rule_type),
+        _normalized_rule_text(constrained_object),
+        _normalized_rule_text(constraint_value or constrained_object),
+    )
+    candidates = Rule.objects.filter(
+        type=rule_type,
+        drug_name=constrained_object[:255],
+    ).only('rule_id', 'type', 'drug_name', 'description')
+    for candidate in candidates:
+        signature = (
+            _normalized_rule_text(candidate.type),
+            _normalized_rule_text(candidate.drug_name),
+            _normalized_rule_text(candidate.description),
+        )
+        if signature == target:
+            return candidate
+    return None
 
 
 def save_extracted_rules(task, rules):
@@ -84,6 +116,7 @@ def import_to_rule_library(task, rule_ids=None, select_all=False):
     imported = 0
     skipped = 0
     imported_rule_ids = []
+    duplicate_rule_ids = []
 
     for er in qs:
         if not er.constrained_object and not er.constraint_value:
@@ -93,6 +126,13 @@ def import_to_rule_library(task, rule_ids=None, select_all=False):
         # 生成稳定且唯一的业务规则号
         rule_id = f"imp_{task.id}_{er.seq or er.id}"
         rule_type_cn = RULE_TYPE_MAP.get(er.rule_type, er.rule_type or "其他")
+        existing = _find_existing_equivalent_rule(
+            rule_type_cn, er.constrained_object, er.constraint_value,
+        )
+        if existing:
+            skipped += 1
+            duplicate_rule_ids.append(existing.rule_id)
+            continue
 
         Rule.objects.update_or_create(
             rule_id=rule_id,
@@ -118,5 +158,9 @@ def import_to_rule_library(task, rule_ids=None, select_all=False):
 
     logger.info("[importer] 任务 %s 入库 %s 条, 跳过 %s 条",
                 task.id, imported, skipped)
-    return {"imported": imported, "skipped": skipped,
-            "rule_ids": imported_rule_ids}
+    return {
+        "imported": imported,
+        "skipped": skipped,
+        "duplicate_rule_ids": duplicate_rule_ids,
+        "rule_ids": imported_rule_ids,
+    }

@@ -67,6 +67,7 @@ export interface UploadResponse {
 export interface ConfirmImportResponse {
   imported: number;
   skipped: number;
+  duplicate_rule_ids: string[];
   rule_ids: string[];
   task: RuleImportTask;
 }

@@ -25,9 +25,7 @@ logger = logging.getLogger(__name__)
 
 
 EXAMPLE_FILES = {
-    'duplicate-billing': 'Duplicate billing for medical service items-1-4.pdf',
-    'drug-list': 'National Reimbursement Drug List12.pdf',
-    'over-frequency': 'Over-frequency billing for medical services per cycle.pdf',
+    'policy-example': 'Policy_Example.pdf',
 }
 
 
@@ -127,7 +125,7 @@ class RuleImportExampleDownloadView(APIView):
         if not filename:
             raise Http404('示例文件不存在')
 
-        example_path = settings.BASE_DIR.parent.parent / filename
+        example_path = settings.BASE_DIR / filename
         if not example_path.exists() or not example_path.is_file():
             logger.warning("[rule_import] 示例文件缺失: %s", example_path)
             raise Http404('示例文件不存在')
@@ -217,6 +215,7 @@ class RuleImportTaskViewSet(
             return Response({
                 'imported': result['imported'],
                 'skipped': result['skipped'],
+                'duplicate_rule_ids': result['duplicate_rule_ids'],
                 'rule_ids': result['rule_ids'],
                 'task': RuleImportTaskSerializer(task).data,
             })

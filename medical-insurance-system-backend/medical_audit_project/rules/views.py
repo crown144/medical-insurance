@@ -2,7 +2,6 @@ import logging
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 
-from django.db.models import Q
 from django_filters import rest_framework as django_filters
 from rest_framework import filters as drf_filters
 from rest_framework import status, viewsets
@@ -13,6 +12,7 @@ from rest_framework.response import Response
 from .models import Rule
 from .serializers import RuleSerializer
 from .services import AgentAService
+from .services.readable_renderer import compiled_plan_from_code, render_readable_python
 
 
 logger = logging.getLogger(__name__)
@@ -50,13 +50,21 @@ COMPILE_RULE_NAMES = [
 
 
 def _serialize_generation_result(generated):
+    try:
+        compiled_plan = compiled_plan_from_code(generated.generated_code) if generated.generated_code else None
+    except (SyntaxError, ValueError):
+        # Legacy executable code has no embedded plan to render faithfully.
+        compiled_plan = None
     return {
         'rule_text': generated.rule_text,
         'system_prompt': generated.system_prompt,
         'tool_schema': generated.tool_schema,
         'generated_code': generated.generated_code,
         'generated_python': generated.generated_code,
+        'compiled_plan': compiled_plan,
+        'readable_python': render_readable_python(compiled_plan) if compiled_plan else '',
         'validation': generated.validation,
+        'compilation_status': 'compiled' if generated.validation.get('valid') and generated.generated_code else 'needs_revision',
         'rule_snapshot': generated.rule_snapshot,
         'raw_output': generated.raw_output,
         'finish_reason': generated.finish_reason,
@@ -148,13 +156,9 @@ class RuleViewSet(viewsets.ModelViewSet):
     ordering_fields = ['id', 'drug_name', 'created_at']
 
     def get_queryset(self):
-        queryset = Rule.objects.all()
-        compile_mode = str(self.request.query_params.get('compile', '')).lower()
-        if compile_mode in {'1', 'true', 'yes', 'on'}:
-            return queryset.filter(
-                Q(rule_id__in=COMPILE_RULE_IDS) | Q(drug_name__in=COMPILE_RULE_NAMES),
-            ).order_by('id')
-        return queryset.filter(rule_id__in=DEMO_RULE_IDS).order_by('id')
+        # Temporary management mode: expose every rule to both the Rule
+        # Library and the Compilation workspace, rather than demo whitelists.
+        return Rule.objects.all().order_by('id')
 
     @staticmethod
     def _agenta_error_response(exc):
@@ -189,29 +193,7 @@ class RuleViewSet(viewsets.ModelViewSet):
         return Response({
             'code': 0,
             'message': 'ok',
-            'result': {
-                'rule_text': generated.rule_text,
-                'system_prompt': generated.system_prompt,
-                'tool_schema': generated.tool_schema,
-                'generated_code': generated.generated_code,
-                'generated_python': generated.generated_code,
-                'validation': generated.validation,
-                'rule_snapshot': generated.rule_snapshot,
-                'raw_output': generated.raw_output,
-                'finish_reason': generated.finish_reason,
-                'runtime_mode': generated.rule_snapshot.get('runtime_mode'),
-                'runtime_label': generated.rule_snapshot.get('runtime_label'),
-                'llm_config': generated.rule_snapshot.get('llm_config'),
-                'irr': generated.irr,
-                'atomic_constraints': generated.atomic_constraints,
-                'logic_tree': generated.logic_tree,
-                'logical_expression': generated.logical_expression,
-                'applicability_binding': generated.applicability_binding,
-                'constraint_bindings': generated.constraint_bindings,
-                'execution_bindings': generated.execution_bindings,
-                'binding_source': generated.binding_source,
-                'binding_validation': generated.binding_validation,
-            },
+            'result': _serialize_generation_result(generated),
         })
 
     @action(detail=False, methods=['post'], url_path='agenta/generate/start')
@@ -254,6 +236,53 @@ class RuleViewSet(viewsets.ModelViewSet):
                 'data': task['result'],
             },
         })
+
+    @staticmethod
+    def _revision_irr(rule):
+        return {'rule_category': rule.type, 'constraint_object': rule.drug_name,
+                'constraint_condition': rule.description}
+
+    @action(detail=True, methods=['post'], url_path='revision')
+    def revision(self, request, pk=None):
+        from .services.revision_service import request_revision
+        rule = self.get_object()
+        try:
+            result = request_revision(request.data.get('draft'), self._revision_irr(rule), request.data.get('feedback'))
+        except (ValueError, KeyError, TypeError) as exc:
+            return Response({'message': str(exc) or 'Revision needs attention.', 'error': str(exc)}, status=400)
+        except Exception as exc:
+            logger.exception('Rule revision failed')
+            return self._agenta_error_response(exc)
+        return Response({'result': result})
+
+    @action(detail=True, methods=['post'], url_path='recompile')
+    def recompile(self, request, pk=None):
+        from .services.revision_service import compile_draft
+        rule = self.get_object()
+        try:
+            generated = compile_draft(request.data.get('draft'), self._revision_irr(rule))
+        except (ValueError, KeyError, TypeError) as exc:
+            return Response({'message': 'The draft could not be compiled.', 'error': str(exc)}, status=400)
+        return Response({'result': _serialize_generation_result(generated)})
+
+    @action(detail=True, methods=['get'], url_path='compilation')
+    def compilation(self, request, pk=None):
+        from .services.revision_service import compile_draft
+        rule = self.get_object()
+        if not rule.rule_code:
+            return Response({'result': None})
+        try:
+            plan = compiled_plan_from_code(rule.rule_code)
+            atoms = plan.get('atomic_constraints') or [
+                {'id': b['atomic_constraint_id'], 'normalized_constraint': b.get('normalized_constraint') or b.get('expected_condition') or 'Condition', 'source_span': ''}
+                for b in plan['constraints']]
+            generated = compile_draft({'atomic_constraints': atoms, 'logic_tree': plan['logic'],
+                'applicability_binding': plan['applicability'], 'constraint_bindings': plan['constraints']}, self._revision_irr(rule))
+            generated.generated_code = rule.rule_code
+            return Response({'result': _serialize_generation_result(generated)})
+        except (ValueError, SyntaxError, KeyError, TypeError):
+            # Older standalone Python remains runnable but has no editable plan.
+            return Response({'result': None})
 
     @action(detail=False, methods=['post'], url_path='agenta/validate')
     def agenta_validate(self, request):
